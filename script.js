@@ -3,7 +3,6 @@
  * Frontend Logic - Premium Orange Edition
  */
 
-// URL de la Web App de Google Apps Script
 const WEB_APP_URL =
   "https://script.google.com/macros/s/AKfycbwJhXZI7WtD06lSryKqhxOJA6gc-HE6kfc1z60xMp4kO4sk7AHWpuGZFCjFRL51Pm1b/exec";
 
@@ -149,9 +148,15 @@ function init() {
 
   // Utility Actions
   elements.btnRefresh.addEventListener("click", () => {
-    showToast("Sincronizando con la base de datos...");
-    loadData();
-    loadMappingData();
+    // Detectar en qué panel estamos
+    if (elements.navUsers.classList.contains("active")) {
+      showToast("Sincronizando lista de usuarios...");
+      fetchUserList().then(() => renderUserTable());
+    } else {
+      showToast("Sincronizando con la base de datos...");
+      loadData();
+      loadMappingData();
+    }
   });
 
   // Navigation Events
@@ -607,8 +612,12 @@ function renderRecords() {
   // 3. RENDERIZADO
   elements.recordsGrid.innerHTML = "";
 
+  // NUEVO: Verificamos si realmente estamos en el Dashboard antes de mostrar
+  const isDashboardActive = elements.navDashboard.classList.contains("active");
+
   if (filtered.length === 0) {
-    elements.recordsGrid.style.display = "grid";
+    if (isDashboardActive) elements.recordsGrid.style.display = "grid";
+
     elements.recordsGrid.innerHTML = `
         <div class="loading-state" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 24px; background: var(--white); border-radius: var(--radius-md); border: 1px dashed var(--border); box-shadow: var(--shadow-sm);">
             <div style="width: 64px; height: 64px; background: rgba(10, 31, 68, 0.05); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
@@ -623,12 +632,12 @@ function renderRecords() {
   }
 
   if (state.viewMode === "cards") {
-    elements.recordsGrid.style.display = "grid";
+    if (isDashboardActive) elements.recordsGrid.style.display = "grid";
     filtered.forEach((record) => {
       elements.recordsGrid.appendChild(createCardElement(record));
     });
   } else {
-    elements.recordsGrid.style.display = "block";
+    if (isDashboardActive) elements.recordsGrid.style.display = "block";
     elements.recordsGrid.appendChild(createTableElement(filtered));
   }
 
@@ -1374,6 +1383,9 @@ function showDashboardView() {
   }
 
   elements.searchInput.parentElement.style.display = "flex";
+  elements.btnToggleView.style.display = "flex"; // NUEVO: Muestra el botón de vista
+  // NUEVO: Restaurar el estado correcto de "Seleccionar Todo" y la Barra Flotante
+  updateBatchActionBar();
 }
 
 function showUserManagementView() {
@@ -1392,6 +1404,10 @@ function showUserManagementView() {
   elements.recordsGrid.style.display = "none";
   elements.adminFiltersSection.style.display = "none";
   elements.searchInput.parentElement.style.display = "none";
+  elements.btnToggleView.style.display = "none"; // NUEVO: Oculta el botón de vista
+  // NUEVO: Ocultar botón de Seleccionar Todo y Barra Flotante
+  document.getElementById("btnSelectAll").style.display = "none";
+  elements.batchActionBar.style.display = "none";
 
   renderUserTable();
 }
