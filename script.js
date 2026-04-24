@@ -3,6 +3,7 @@
  * Frontend Logic - Premium Orange Edition
  */
 
+// URL de la Web App de Google Apps Script
 const WEB_APP_URL =
   "https://script.google.com/macros/s/AKfycbwJhXZI7WtD06lSryKqhxOJA6gc-HE6kfc1z60xMp4kO4sk7AHWpuGZFCjFRL51Pm1b/exec";
 
@@ -590,24 +591,10 @@ function renderRecords() {
   });
 
   // 2. ORDENAMIENTO (El ID es un timestamp, nos sirve para fechas)
-  if (state.viewMode === "cards") {
-    // Cartas: Más actuales arriba
-    filtered.sort((a, b) => Number(b.id_registro) - Number(a.id_registro));
-  } else {
-    // Tabla: Curso -> Alumno -> Fecha (Más actuales arriba)
-    filtered.sort((a, b) => {
-      const cursoA = (a.curso || "").toLowerCase();
-      const cursoB = (b.curso || "").toLowerCase();
-      if (cursoA !== cursoB) return cursoA.localeCompare(cursoB);
-
-      // Usamos el operador || '' para proteger contra nombres o apellidos vacíos
-      const nombreA = `${a.apellidos || ""} ${a.nombres || ""}`.toLowerCase();
-      const nombreB = `${b.apellidos || ""} ${b.nombres || ""}`.toLowerCase();
-      if (nombreA !== nombreB) return nombreA.localeCompare(nombreB);
-
-      return Number(b.id_registro || 0) - Number(a.id_registro || 0);
-    });
-  }
+  // Siempre ordenar del más actual al más antiguo (ID Descendente)
+  filtered.sort(
+    (a, b) => Number(b.id_registro || 0) - Number(a.id_registro || 0),
+  );
 
   // 3. RENDERIZADO
   elements.recordsGrid.innerHTML = "";
@@ -681,7 +668,7 @@ function createCardElement(record) {
             <h3>${record.nombres} ${record.apellidos}</h3>
             <div class="card-info">
                 <span><i class="ph ph-identification-card"></i><strong>DNI:</strong> ${record.dni}</span>
-                <span><i class="ph ph-calendar"></i><strong>Fecha:</strong> ${record.fecha_y_hora || "-"}</span>
+                <span><i class="ph ph-calendar"></i><strong>Fecha:</strong> <br>${formatDate(record.fecha_y_hora)}</span>
                 <span><i class="ph ph-book-open"></i><strong>Curso:</strong> ${record.curso}</span>
                 ${state.user.role === "admin" ? `<span><i class="ph ph-user-focus"></i><strong>Docente:</strong> ${record.docente}</span>` : ""}
             </div>
@@ -750,7 +737,7 @@ function createTableElement(filteredRecords) {
             <tr class="clickable-row" onclick="if(event.target.tagName !== 'INPUT' && !event.target.closest('button')) { ${rowClickAction} }">
                 <td style="width: 40px; text-align:center;" onclick="event.stopPropagation();">${checkboxHtml}</td>
                 <td><span class="status-badge status-${estadoClass}" style="font-size:10px; padding: 4px 8px;">${estadoLabel}</span></td>
-                <td style="font-size: 13px; color: var(--text-muted);">${record.fecha_y_hora || "-"}</td>
+                <td style="font-size: 13px; color: var(--text-muted);">${formatDate(record.fecha_y_hora)}</td>
                 <td style="font-weight: 600;">${record.apellidos}, ${record.nombres}</td>
                 <td>${record.curso}</td>
                 <td style="text-align:center; font-weight:bold; color:var(--primary); font-size:15px;">${record.nota || "-"}</td>
@@ -1200,7 +1187,9 @@ function updateBatchActionBar() {
   // Manejar visibilidad y texto del botón "Seleccionar Todo" superior
   const btnSelectAll = document.getElementById("btnSelectAll");
   const spanSelectAll = document.getElementById("selectAllText");
-  if (allCheckboxes.length > 0) {
+  const isDashboardActive = elements.navDashboard.classList.contains("active");
+
+  if (allCheckboxes.length > 0 && isDashboardActive) {
     btnSelectAll.style.display = "flex";
     if (count === allCheckboxes.length) {
       spanSelectAll.textContent = "Deseleccionar Todo";
@@ -1384,6 +1373,14 @@ function showDashboardView() {
 
   elements.searchInput.parentElement.style.display = "flex";
   elements.btnToggleView.style.display = "flex"; // NUEVO: Muestra el botón de vista
+
+  // Limpiar selecciones previas de usuarios al cambiar de vista
+  const masterUserCb = document.getElementById("selectAllUsersCheckbox");
+  if (masterUserCb) masterUserCb.checked = false;
+  document
+    .querySelectorAll(".select-user-checkbox")
+    .forEach((cb) => (cb.checked = false));
+
   // NUEVO: Restaurar el estado correcto de "Seleccionar Todo" y la Barra Flotante
   updateBatchActionBar();
 }
@@ -1409,6 +1406,13 @@ function showUserManagementView() {
   document.getElementById("btnSelectAll").style.display = "none";
   elements.batchActionBar.style.display = "none";
 
+  // Limpiar selecciones previas del dashboard
+  document
+    .querySelectorAll(".select-card-checkbox")
+    .forEach((cb) => (cb.checked = false));
+  const masterUserCb = document.getElementById("selectAllUsersCheckbox");
+  if (masterUserCb) masterUserCb.checked = false;
+
   renderUserTable();
 }
 
@@ -1424,6 +1428,9 @@ function renderUserTable() {
   filtered.forEach((u) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
+      <td style="text-align:center;">
+        <input type="checkbox" class="select-user-checkbox" value="${u.name}" onchange="updateUserBatchActionBar()">
+      </td>
       <td>
         <div style="display: flex; align-items: center; gap: 12px;">
           <div class="user-avatar" style="width: 32px; height: 32px; font-size: 14px;">${u.name.charAt(0)}</div>
@@ -1434,6 +1441,9 @@ function renderUserTable() {
       <td style="color: var(--text-muted); font-size: 13px;">${u.correo || "---"}</td>
       <td style="text-align: right;">
         <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <button class="btn-icon" style="width: 32px; height: 32px; font-size: 16px;" onclick="sendUserCredentials('${u.name}')" title="Enviar credenciales por correo">
+            <i class="ph ph-paper-plane-tilt"></i>
+          </button>
           <button class="btn-icon" style="width: 32px; height: 32px; font-size: 16px;" onclick="openUserModal('${u.name}')">
             <i class="ph ph-pencil"></i>
           </button>
@@ -1524,6 +1534,95 @@ async function deleteUser(name) {
   }
 }
 
+async function sendUserCredentials(name) {
+  const confirmed = await showConfirm(
+    `¿Estás seguro de enviar las credenciales de acceso al correo del usuario "${name}"?`,
+  );
+  if (!confirmed) return;
+
+  showToast(`Enviando credenciales a ${name}...`);
+
+  try {
+    const res = await callApi("sendUserCredentials", { name });
+    if (res.success) {
+      showToast(res.message, "success");
+    } else {
+      showToast(res.message, "danger");
+    }
+  } catch (error) {
+    showToast("Error al enviar credenciales", "danger");
+  }
+}
+
+function toggleSelectAllUsers() {
+  const masterCheckbox = document.getElementById("selectAllUsersCheckbox");
+  if (!masterCheckbox) return;
+  const isChecked = masterCheckbox.checked;
+  const checkboxes = document.querySelectorAll(".select-user-checkbox");
+  checkboxes.forEach((cb) => {
+    cb.checked = isChecked;
+  });
+  updateUserBatchActionBar();
+}
+
+function updateUserBatchActionBar() {
+  const allCheckboxes = document.querySelectorAll(".select-user-checkbox");
+  const checkedBoxes = Array.from(allCheckboxes).filter((cb) => cb.checked);
+  const count = checkedBoxes.length;
+
+  const masterCheckbox = document.getElementById("selectAllUsersCheckbox");
+  if (masterCheckbox && allCheckboxes.length > 0) {
+    masterCheckbox.checked = count === allCheckboxes.length;
+  }
+
+  if (count > 0) {
+    elements.batchCountText.textContent = `${count} usuario${count > 1 ? "s" : ""} seleccionado${count > 1 ? "s" : ""}`;
+    elements.batchActionIcon.className = "ph ph-paper-plane-tilt";
+    elements.batchActionText.textContent = "Enviar Credenciales";
+    elements.btnBatchAction.onclick = sendUserCredentialsBatch;
+    elements.batchActionBar.style.display = "flex";
+  } else {
+    elements.batchActionBar.style.display = "none";
+  }
+}
+
+async function sendUserCredentialsBatch() {
+  const checkboxes = document.querySelectorAll(".select-user-checkbox:checked");
+  const names = Array.from(checkboxes).map((cb) => cb.value);
+
+  if (names.length === 0) return;
+
+  const confirmed = await showConfirm(
+    `¿Estás seguro de enviar credenciales de acceso a ${names.length} usuario(s)?`,
+  );
+  if (!confirmed) return;
+
+  const originalHtml = elements.btnBatchAction.innerHTML;
+  elements.btnBatchAction.disabled = true;
+  elements.btnBatchAction.innerHTML = `
+        <div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0;display:inline-block;vertical-align:middle;"></div>
+        <span style="margin-left:8px;" class="loading-dots">Enviando</span>
+    `;
+
+  try {
+    const res = await callApi("sendUserCredentialsBatch", { names: names });
+    if (res.success) {
+      showToast(res.message, "success");
+      // Desmarcar todo
+      checkboxes.forEach((cb) => (cb.checked = false));
+      document.getElementById("selectAllUsersCheckbox").checked = false;
+      updateUserBatchActionBar();
+    } else {
+      showToast(res.message, "danger");
+    }
+  } catch (error) {
+    showToast("Error al enviar credenciales", "danger");
+  } finally {
+    elements.btnBatchAction.disabled = false;
+    elements.btnBatchAction.innerHTML = originalHtml;
+  }
+}
+
 // --- Toast System ---
 function showToast(message, type = "info") {
   elements.toastMessage.textContent = message;
@@ -1531,6 +1630,38 @@ function showToast(message, type = "info") {
   setTimeout(() => {
     elements.toast.classList.remove("active");
   }, 4000);
+}
+
+// --- Helpers ---
+function formatDate(dateString) {
+  if (!dateString) return "-";
+  try {
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return dateString; // fallback
+    const months = [
+      "Ene",
+      "Feb",
+      "Mar",
+      "Abr",
+      "May",
+      "Jun",
+      "Jul",
+      "Ago",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dic",
+    ];
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, "0");
+    const minutes = String(d.getMinutes()).padStart(2, "0");
+    const seconds = String(d.getSeconds()).padStart(2, "0");
+    return `${day}.${month}.${year}<br>${hours}:${minutes}:${seconds}`;
+  } catch (e) {
+    return dateString;
+  }
 }
 
 window.onload = init;

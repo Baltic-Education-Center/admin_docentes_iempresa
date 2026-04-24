@@ -3,8 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/x-icon" href="images/logo_iempresa.png">
+    <link rel="icon" type="image/x-icon" href="images/logo_iempresa.png" />
     <title>IEmpresa | Gestión de Docentes</title>
+
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -118,7 +119,13 @@
               <div class="select-wrapper">
                 <select id="adminStatusSelect">
                   <option value="">Todos los estados</option>
-                  <option value="Sin revisar" style="font-weight: bold;" selected>Sin revisar</option>
+                  <option
+                    value="Sin revisar"
+                    style="font-weight: bold"
+                    selected
+                  >
+                    Sin revisar
+                  </option>
                   <option value="Pendiente">Pendientes</option>
                   <option value="Completado">Completados</option>
                   <option value="Enviado">Enviados</option>
@@ -139,7 +146,9 @@
               <div class="select-wrapper">
                 <select id="statusSelect">
                   <option value="">Todos los estados</option>
-                  <option value="Pendiente" style="font-weight: bold;" selected>Pendientes</option>
+                  <option value="Pendiente" style="font-weight: bold" selected>
+                    Pendientes
+                  </option>
                   <option value="Completado">Completados</option>
                   <option value="Enviado">Enviados</option>
                 </select>
@@ -297,6 +306,13 @@
               <table class="user-table">
                 <thead>
                   <tr>
+                    <th style="width: 40px; text-align: center">
+                      <input
+                        type="checkbox"
+                        id="selectAllUsersCheckbox"
+                        onchange="toggleSelectAllUsers()"
+                      />
+                    </th>
                     <th>Usuario</th>
                     <th>Rol</th>
                     <th>Correo</th>
