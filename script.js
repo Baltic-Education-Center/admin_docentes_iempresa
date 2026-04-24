@@ -866,7 +866,7 @@ function updateStats() {
       }
     }
   } else {
-    // Lógica clásica para Docentes: Conteo directo de alumnos
+    // Lógica para Docentes: Conteo directo de alumnos por cada estado
     const visibleRecords = filteredForStats.filter((r) => {
       const st = (r.estado || "").toString().trim().toLowerCase();
       return ["pendiente", "completado", "enviado"].includes(st);
@@ -875,10 +875,15 @@ function updateStats() {
     pendingCount = visibleRecords.filter(
       (r) => (r.estado || "").toString().trim().toLowerCase() === "pendiente",
     ).length;
+
     completedCount = visibleRecords.filter(
       (r) => (r.estado || "").toString().trim().toLowerCase() === "completado",
     ).length;
-    totalCount = visibleRecords.length; // Mantiene el total de alumnos asignados válidos
+
+    // CORRECCIÓN: Ahora solo cuenta estrictamente los que tienen estado "Enviado"
+    totalCount = visibleRecords.filter(
+      (r) => (r.estado || "").toString().trim().toLowerCase() === "enviado",
+    ).length;
   }
 
   // 3. IMPRIMIR VALORES (CON LÓGICA DE "SÍ / NO" PARA ADMIN ESPECÍFICO)
