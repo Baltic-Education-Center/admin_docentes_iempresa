@@ -5,7 +5,7 @@
 
 // URL de la Web App de Google Apps Script
 const WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbwJhXZI7WtD06lSryKqhxOJA6gc-HE6kfc1z60xMp4kO4sk7AHWpuGZFCjFRL51Pm1b/exec";
+  "https://script.google.com/macros/s/AKfycbwV4FutdAhabjcT2wGZSNc-eaxYIE1hQ2SBjfF8V27IJcS5J-oBHqr_-SZwIrf8yeiouw/exec";
 
 // --- State Management ---
 let state = {
@@ -1096,7 +1096,7 @@ async function saveStudentEdit(id) {
   );
 
   const updateData = {
-    alumno: document.getElementById("editAlumnos").value, // Nombre unificado
+    alumno: document.getElementById("editAlumno").value, // Nombre unificado
     dni: document.getElementById("editDni").value,
     estado: elements.editEstado.value,
     docente: record.docente,
