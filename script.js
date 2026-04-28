@@ -583,8 +583,7 @@ function renderRecords() {
 
     const searchStr = (state.filters.search || "").toLowerCase();
     const matchesSearch =
-      (r.nombres || "").toLowerCase().includes(searchStr) ||
-      (r.apellidos || "").toLowerCase().includes(searchStr) ||
+      (r.alumnos || "").toLowerCase().includes(searchStr) ||
       (r.dni || "").toString().includes(searchStr);
 
     return matchesTeacher && matchesCourse && matchesStatus && matchesSearch;
@@ -665,7 +664,7 @@ function createCardElement(record) {
             </div>
         </div>
         <div class="card-body">
-            <h3>${record.nombres} ${record.apellidos}</h3>
+            <h3>${record.alumnos}</h3>
             <div class="card-info">
                 <span><i class="ph ph-identification-card"></i><strong>DNI:</strong> ${record.dni}</span>
                 <span><i class="ph ph-calendar"></i><strong>Fecha:</strong> <br>${formatDate(record.fecha_y_hora)}</span>
@@ -738,7 +737,7 @@ function createTableElement(filteredRecords) {
                 <td style="width: 40px; text-align:center;" onclick="event.stopPropagation();">${checkboxHtml}</td>
                 <td><span class="status-badge status-${estadoClass}" style="font-size:10px; padding: 4px 8px;">${estadoLabel}</span></td>
                 <td style="font-size: 13px; color: var(--text-muted);">${formatDate(record.fecha_y_hora)}</td>
-                <td style="font-weight: 600;">${record.apellidos}, ${record.nombres}</td>
+                <td style="font-weight: 600;">${record.alumnos}</td>
                 <td>${record.curso}</td>
                 <td style="text-align:center; font-weight:bold; color:var(--primary); font-size:15px;">${record.nota || "-"}</td>
                 <td style="max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--text-muted);">${record.comentario || "-"}</td>
@@ -1056,8 +1055,7 @@ function openGradingModal(id) {
   );
   if (!record) return;
 
-  document.getElementById("modalStudentName").textContent =
-    `${record.nombres} ${record.apellidos}`;
+  document.getElementById("modalStudentName").textContent = record.alumnos;
   document.getElementById("modalStudentDni").textContent = `DNI: ${record.dni}`;
   document.getElementById("modalFileLink").href = record.archivo_adjunto;
   document.getElementById("gradeInput").value = "";
@@ -1073,8 +1071,7 @@ function openEditModal(id) {
   );
   if (!record) return;
 
-  document.getElementById("editNombres").value = record.nombres;
-  document.getElementById("editApellidos").value = record.apellidos;
+  document.getElementById("editAlumnos").value = record.alumnos;
   document.getElementById("editDni").value = record.dni;
   elements.editEstado.value = record.estado || "Pendiente";
 
@@ -1099,8 +1096,7 @@ async function saveStudentEdit(id) {
   );
 
   const updateData = {
-    nombres: document.getElementById("editNombres").value,
-    apellidos: document.getElementById("editApellidos").value,
+    alumnos: document.getElementById("editAlumnos").value, // Nombre unificado
     dni: document.getElementById("editDni").value,
     estado: elements.editEstado.value,
     docente: record.docente,
@@ -1112,8 +1108,8 @@ async function saveStudentEdit(id) {
         : record.comentario,
   };
 
-  if (!updateData.nombres || !updateData.dni) {
-    showToast("Nombre y DNI son obligatorios", "warning");
+  if (!updateData.alumnos || !updateData.dni) {
+    showToast("El nombre y DNI son obligatorios", "warning");
     return;
   }
 
@@ -1647,7 +1643,7 @@ function formatDate(dateString) {
       "Jun",
       "Jul",
       "Ago",
-      "Sep",
+      "Set",
       "Oct",
       "Nov",
       "Dic",
