@@ -1,8 +1,3 @@
-/**
- * IEmpresa | Gestión Académica
- * Frontend Logic - Premium Orange Edition
- */
-
 // URL de la Web App de Google Apps Script
 const WEB_APP_URL =
   "https://script.google.com/macros/s/AKfycbwJhXZI7WtD06lSryKqhxOJA6gc-HE6kfc1z60xMp4kO4sk7AHWpuGZFCjFRL51Pm1b/exec";
@@ -669,6 +664,7 @@ function createCardElement(record) {
                 <span><i class="ph ph-identification-card"></i><strong>DNI:</strong> ${record.dni}</span>
                 <span><i class="ph ph-calendar"></i><strong>Fecha:</strong> <br>${formatDate(record.fecha_y_hora)}</span>
                 <span><i class="ph ph-book-open"></i><strong>Curso:</strong> ${record.curso}</span>
+                <span><i class="ph ph-file-text"></i><strong>Actividad:</strong> <span style="color:var(--primary); font-weight:700;">${record.actividad || "Trabajo Final"}</span></span>
                 ${state.user.role === "admin" ? `<span><i class="ph ph-user-focus"></i><strong>Docente:</strong> ${record.docente}</span>` : ""}
             </div>
         </div>
@@ -738,7 +734,9 @@ function createTableElement(filteredRecords) {
                 <td><span class="status-badge status-${estadoClass}" style="font-size:10px; padding: 4px 8px;">${estadoLabel}</span></td>
                 <td style="font-size: 13px; color: var(--text-muted);">${formatDate(record.fecha_y_hora)}</td>
                 <td style="font-weight: 600;">${record.alumno}</td>
-                <td>${record.curso}</td>
+                
+                <td>${record.curso}<br><small style="color:var(--primary); font-weight:bold;">${record.actividad || "Trabajo Final"}</small></td>
+                
                 <td style="text-align:center; font-weight:bold; color:var(--primary); font-size:15px;">${record.nota || "-"}</td>
                 <td style="max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--text-muted);">${record.comentario || "-"}</td>
                 <td style="text-align: center; vertical-align: middle;">${actionHtml}</td>
