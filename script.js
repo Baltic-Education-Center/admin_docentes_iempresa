@@ -84,30 +84,48 @@ const elements = {
   btnSaveUser: document.getElementById("btnSaveUser"),
   btnToggleView: document.getElementById("btnToggleView"),
   iconToggleView: document.getElementById("iconToggleView"),
+  btnRemindTeacher: document.getElementById("btnRemindTeacher"),
+  remindTeacherText: document.getElementById("remindTeacherText"),
 };
 
 // --- Initialization ---
 function init() {
   const savedUser = localStorage.getItem("iempresa_user");
+  const splash = document.getElementById("splashScreen");
+  const splashText = document.getElementById("splashText");
+
   if (savedUser) {
     state.user = JSON.parse(savedUser);
+    // Cambia el mensaje si detecta que el usuario ya estaba logueado
+    if (splashText)
+      splashText.textContent = `Bienvenido de nuevo, ${state.user.name}...`;
     showDashboard();
   }
 
-  // Load user list from cache first for instant suggestions
   const cachedUsers = localStorage.getItem("iempresa_user_list");
   if (cachedUsers) {
     state.userList = JSON.parse(cachedUsers);
   }
 
-  // Refresh user list in background
-  fetchUserList();
+  // Lanzamos el fetch en segundo plano (no bloquea el tiempo del splash)
+  fetchUserList().catch((err) =>
+    console.error("Error al cargar usuarios:", err),
+  );
 
-  // Auth Events
+  // TIMEOUT EXACTO: 2 segundos (2000 ms)
+  setTimeout(() => {
+    if (splash) {
+      splash.classList.add("hidden");
+      // Se elimina permanentemente del DOM tras la transición para evitar el bug visual
+      setTimeout(() => splash.remove(), 500);
+    }
+  }, 3000);
+
+  // Eventos de Autenticación
   elements.loginForm.addEventListener("submit", handleLoginSubmit);
   elements.btnLogout.addEventListener("click", logout);
 
-  // Autocomplete Logic
+  // Lógica de Autocompletado
   elements.loginUsername.addEventListener("input", handleUsernameInput);
   document.addEventListener("click", (e) => {
     if (
@@ -118,33 +136,37 @@ function init() {
     }
   });
 
-  // Docente Filters
+  // Filtros Docente
   elements.statusSelect.addEventListener("change", (e) => {
     state.filters.status = e.target.value;
     renderRecords();
   });
 
-  // Admin Filters
+  // Evento para el nuevo botón de recordatorios
+  elements.btnRemindTeacher.addEventListener("click", handleSendReminders);
+
+  // Filtros Admin
   elements.adminTeacherSelect.addEventListener("change", (e) => {
     state.filters.teacher = e.target.value;
     state.filters.course = "";
     populateAdminCourseSelect();
     renderRecords();
+    updateRemindButtonText(); // NUEVO
   });
+
   elements.adminStatusSelect.addEventListener("change", (e) => {
     state.filters.status = e.target.value;
     renderRecords();
   });
 
-  // Universal Search
+  // Búsqueda Universal
   elements.searchInput.addEventListener("input", (e) => {
     state.filters.search = e.target.value.toLowerCase();
     renderRecords();
   });
 
-  // Utility Actions
+  // Acciones de Utilidad
   elements.btnRefresh.addEventListener("click", () => {
-    // Detectar en qué panel estamos
     if (elements.navUsers.classList.contains("active")) {
       showToast("Sincronizando lista de usuarios...");
       fetchUserList().then(() => renderUserTable());
@@ -155,7 +177,7 @@ function init() {
     }
   });
 
-  // Navigation Events
+  // Navegación
   elements.navDashboard.addEventListener("click", (e) => {
     e.preventDefault();
     showDashboardView();
@@ -165,7 +187,7 @@ function init() {
     showUserManagementView();
   });
 
-  // User Management Events
+  // Gestión de Usuarios
   elements.btnAddUser.addEventListener("click", () => openUserModal());
   elements.btnSaveUser.addEventListener("click", handleSaveUser);
   elements.userSearchInput.addEventListener("input", renderUserTable);
@@ -1163,14 +1185,20 @@ function updateBatchActionBar() {
 
   // Mostrar u ocultar la barra flotante inferior
   if (count > 0) {
-    elements.batchCountText.textContent = `${count} registro${count > 1 ? "s" : ""} seleccionado${count > 1 ? "s" : ""}`;
+    const countSpan = document.getElementById("batchCountText");
+    const actionIcon = document.getElementById("batchActionIcon");
+    const actionText = document.getElementById("batchActionText");
+
+    if (countSpan)
+      countSpan.textContent = `${count} registro${count > 1 ? "s" : ""} seleccionado${count > 1 ? "s" : ""}`;
+
     if (state.user.role === "admin") {
-      elements.batchActionIcon.className = "ph ph-list-checks";
-      elements.batchActionText.textContent = "Marcar como Pendiente";
+      if (actionIcon) actionIcon.className = "ph ph-list-checks";
+      if (actionText) actionText.textContent = "Marcar como Pendiente";
       elements.btnBatchAction.onclick = markSelectedAsPending;
     } else {
-      elements.batchActionIcon.className = "ph ph-paper-plane-tilt";
-      elements.batchActionText.textContent = "Enviar Reporte";
+      if (actionIcon) actionIcon.className = "ph ph-paper-plane-tilt";
+      if (actionText) actionText.textContent = "Enviar Reporte";
       elements.btnBatchAction.onclick = sendTeacherReport;
     }
     elements.batchActionBar.style.display = "flex";
@@ -1337,46 +1365,65 @@ function viewGrade(id) {
 }
 
 // --- User Management Logic ---
+
+/**
+ * Vista del Dashboard Principal
+ * Restaura la visualización de estadísticas, gráficos y registros
+ */
 function showDashboardView() {
   elements.navDashboard.classList.add("active");
   elements.navUsers.classList.remove("active");
   elements.userManagementView.style.display = "none";
 
-  // Reset titles
+  // Restaurar títulos y controles de búsqueda
   document.getElementById("pageTitle").textContent = "Entregas de Alumnos";
   document.getElementById("pageSubtitle").textContent =
     "Gestiona y califica las evidencias recibidas";
 
-  // Show dashboard elements
+  // Mostrar elementos del dashboard
   elements.statsBar.style.display = "grid";
   elements.chartContainer.style.display = "block";
+  elements.recordsGrid.style.display = "grid";
+  elements.searchInput.parentElement.style.display = "flex";
+  elements.btnToggleView.style.display = "flex";
 
-  // SOLUCIÓN BUG: Respetar el modo de vista actual (Grid para cartas, Block para tabla)
-  if (state.viewMode === "cards") {
-    elements.recordsGrid.style.display = "grid";
-  } else {
+  if (state.user.role === "admin") {
+    elements.adminFiltersSection.style.display = "block";
+    elements.btnRemindTeacher.style.display = "flex";
+    updateRemindButtonText();
+  }
+
+  // Si estamos en modo tabla, asegurar que el display sea correcto
+  if (state.viewMode === "table") {
     elements.recordsGrid.style.display = "block";
   }
 
-  // Mostrar filtros solo para Admin
+  renderRecords();
+}
+
+function showDashboard() {
+  elements.loginOverlay.style.display = "none";
+  elements.appContainer.style.display = "grid";
+  document.body.className = `role-${state.user.role}`;
+  elements.userName.textContent = state.user.name;
+  elements.userRole.textContent =
+    state.user.role === "admin" ? "Administrador" : "Docente";
+
   if (state.user.role === "admin") {
-    elements.adminFiltersSection.style.display = "block";
+    state.filters.status = "Sin revisar";
+    elements.adminStatusSelect.value = "Sin revisar";
+
+    // CORRECCIÓN: Forzamos la visibilidad del botón y la actualización de su texto
+    // apenas el administrador se loguea o recarga la página.
+    elements.btnRemindTeacher.style.display = "flex";
+    updateRemindButtonText();
   } else {
-    elements.adminFiltersSection.style.display = "none";
+    state.filters.status = "Pendiente";
+    elements.statusSelect.value = "Pendiente";
   }
 
-  elements.searchInput.parentElement.style.display = "flex";
-  elements.btnToggleView.style.display = "flex"; // NUEVO: Muestra el botón de vista
-
-  // Limpiar selecciones previas de usuarios al cambiar de vista
-  const masterUserCb = document.getElementById("selectAllUsersCheckbox");
-  if (masterUserCb) masterUserCb.checked = false;
-  document
-    .querySelectorAll(".select-user-checkbox")
-    .forEach((cb) => (cb.checked = false));
-
-  // NUEVO: Restaurar el estado correcto de "Seleccionar Todo" y la Barra Flotante
-  updateBatchActionBar();
+  loadMappingData();
+  loadData();
 }
 
 function showUserManagementView() {
@@ -1395,12 +1442,12 @@ function showUserManagementView() {
   elements.recordsGrid.style.display = "none";
   elements.adminFiltersSection.style.display = "none";
   elements.searchInput.parentElement.style.display = "none";
-  elements.btnToggleView.style.display = "none"; // NUEVO: Oculta el botón de vista
-  // NUEVO: Ocultar botón de Seleccionar Todo y Barra Flotante
+  elements.btnToggleView.style.display = "none";
   document.getElementById("btnSelectAll").style.display = "none";
   elements.batchActionBar.style.display = "none";
+  elements.btnRemindTeacher.style.display = "none";
 
-  // Limpiar selecciones previas del dashboard
+  // Limpiar selecciones previas
   document
     .querySelectorAll(".select-card-checkbox")
     .forEach((cb) => (cb.checked = false));
@@ -1570,9 +1617,16 @@ function updateUserBatchActionBar() {
   }
 
   if (count > 0) {
-    elements.batchCountText.textContent = `${count} usuario${count > 1 ? "s" : ""} seleccionado${count > 1 ? "s" : ""}`;
-    elements.batchActionIcon.className = "ph ph-paper-plane-tilt";
-    elements.batchActionText.textContent = "Enviar Credenciales";
+    const countSpan = document.getElementById("batchCountText");
+    const actionIcon = document.getElementById("batchActionIcon");
+    const actionText = document.getElementById("batchActionText");
+
+    if (countSpan)
+      countSpan.textContent = `${count} usuario${count > 1 ? "s" : ""} seleccionado${count > 1 ? "s" : ""}`;
+
+    if (actionIcon) actionIcon.className = "ph ph-paper-plane-tilt";
+    if (actionText) actionText.textContent = "Enviar Credenciales";
+
     elements.btnBatchAction.onclick = sendUserCredentialsBatch;
     elements.batchActionBar.style.display = "flex";
   } else {
@@ -1655,6 +1709,102 @@ function formatDate(dateString) {
     return `${day}.${month}.${year}<br>${hours}:${minutes}:${seconds}`;
   } catch (e) {
     return dateString;
+  }
+}
+
+// --- Lógica de Notificaciones a Docentes ---
+function updateRemindButtonText() {
+  const span = document.getElementById("remindTeacherText");
+  if (!span) return;
+  if (state.filters.teacher === "") {
+    span.textContent = "Notificar a Todos";
+  } else {
+    span.textContent = "Notificar Docente";
+  }
+}
+
+async function handleSendReminders() {
+  const targetTeacher = state.filters.teacher;
+
+  // 1. Identificar destinatarios
+  const pendingRecords = state.records.filter(
+    (r) => (r.estado || "").toLowerCase() === "pendiente",
+  );
+
+  let recipients = [];
+  if (targetTeacher) {
+    const user = state.userList.find(
+      (u) => u.name.toLowerCase() === targetTeacher.toLowerCase(),
+    );
+    if (user && user.correo) {
+      recipients.push({ name: targetTeacher, email: user.correo });
+    }
+  } else {
+    const teacherNames = [...new Set(pendingRecords.map((r) => r.docente))];
+    recipients = teacherNames
+      .map((name) => {
+        const user = state.userList.find(
+          (u) => u.name.toLowerCase() === name.toLowerCase(),
+        );
+        return { name, email: user ? user.correo : null };
+      })
+      .filter((t) => t.email);
+  }
+
+  if (recipients.length === 0) {
+    showToast("No hay docentes con pendientes y correo válido.", "warning");
+    return;
+  }
+
+  // 2. Construir mensaje de confirmación con lista de correos
+  const emailListHtml = recipients
+    .map((r) => `<br>• ${r.name} (${r.email})`)
+    .join("");
+
+  const msg = targetTeacher
+    ? `¿Enviar recordatorio al docente "${targetTeacher}"? <br><small>${recipients[0].email}</small>`
+    : `¿Enviar recordatorios a los siguientes docentes?<br><div style="text-align:left; font-size:13px; margin-top:10px; max-height:150px; overflow-y:auto; background:#f8f9fa; padding:10px; border-radius:8px;">${emailListHtml}</div>`;
+
+  // Usamos un modal más grande o inyectamos el HTML en el mensaje
+  elements.confirmMessage.innerHTML = msg;
+  elements.confirmModal.classList.add("active");
+
+  const confirmed = await new Promise((resolve) => {
+    const onAccept = () => {
+      elements.confirmModal.classList.remove("active");
+      resolve(true);
+    };
+    const onCancel = () => {
+      elements.confirmModal.classList.remove("active");
+      resolve(false);
+    };
+    elements.btnAcceptConfirm.onclick = onAccept;
+    elements.btnCancelConfirm.onclick = onCancel;
+  });
+
+  if (!confirmed) return;
+
+  const originalHtml = elements.btnRemindTeacher.innerHTML;
+  elements.btnRemindTeacher.disabled = true;
+  elements.btnRemindTeacher.innerHTML = `
+    <div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0;display:inline-block;vertical-align:middle; border-top-color: var(--primary);"></div>
+    <span style="margin-left:8px;" class="loading-dots">Enviando</span>
+  `;
+
+  try {
+    const res = await callApi("sendReminders", { targetTeacher });
+    if (res.success) {
+      showToast(res.message, "success");
+    } else {
+      showToast(res.message, "warning");
+    }
+  } catch (error) {
+    showToast("Error al enviar recordatorios", "danger");
+  } finally {
+    elements.btnRemindTeacher.disabled = false;
+    elements.btnRemindTeacher.innerHTML = originalHtml;
+    // Forzamos la actualización del texto después de restaurar el HTML
+    updateRemindButtonText();
   }
 }
 
