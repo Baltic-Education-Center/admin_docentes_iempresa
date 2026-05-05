@@ -86,6 +86,7 @@ const elements = {
   iconToggleView: document.getElementById("iconToggleView"),
   btnRemindTeacher: document.getElementById("btnRemindTeacher"),
   remindTeacherText: document.getElementById("remindTeacherText"),
+  btnSyncUsers: document.getElementById("btnSyncUsers"),
 };
 
 // --- Initialization ---
@@ -190,6 +191,7 @@ function init() {
   // Gestión de Usuarios
   elements.btnAddUser.addEventListener("click", () => openUserModal());
   elements.btnSaveUser.addEventListener("click", handleSaveUser);
+  elements.btnSyncUsers.addEventListener("click", handleSyncUsers);
   elements.userSearchInput.addEventListener("input", renderUserTable);
 
   elements.btnToggleView.addEventListener("click", () => {
@@ -1805,6 +1807,34 @@ async function handleSendReminders() {
     elements.btnRemindTeacher.innerHTML = originalHtml;
     // Forzamos la actualización del texto después de restaurar el HTML
     updateRemindButtonText();
+  }
+}
+
+async function handleSyncUsers() {
+  const confirmed = await showConfirm(
+    "¿Deseas sincronizar la lista de docentes desde Parafelix? Se añadirán nuevos docentes y se actualizarán correos existentes (sin afectar contraseñas).",
+  );
+  if (!confirmed) return;
+
+  const btn = elements.btnSyncUsers;
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0;display:inline-block;vertical-align:middle; border-top-color: var(--primary);"></div> <span style="margin-left:8px;" class="loading-dots">Sincronizando</span>`;
+
+  try {
+    const res = await callApi("syncUsers");
+    if (res.success) {
+      showToast(res.message, "success");
+      await fetchUserList();
+      renderUserTable();
+    } else {
+      showToast(res.message, "danger");
+    }
+  } catch (error) {
+    showToast("Error al sincronizar usuarios", "danger");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
   }
 }
 

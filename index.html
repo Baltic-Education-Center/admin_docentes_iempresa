@@ -341,10 +341,16 @@
                   placeholder="Buscar usuario..."
                 />
               </div>
-              <button class="btn btn-primary" id="btnAddUser">
-                <i class="ph ph-user-plus"></i>
-                <span>Nuevo Usuario</span>
-              </button>
+              <div style="display: flex; gap: 12px;">
+                <button class="btn btn-outline" id="btnSyncUsers" title="Sincronizar docentes desde Parafelix">
+                  <i class="ph ph-arrows-clockwise"></i>
+                  <span>Sincronizar Docentes</span>
+                </button>
+                <button class="btn btn-primary" id="btnAddUser">
+                  <i class="ph ph-user-plus"></i>
+                  <span>Nuevo Usuario</span>
+                </button>
+              </div>
             </div>
             <div class="table-responsive">
               <table class="user-table">
