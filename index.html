@@ -113,7 +113,12 @@
             <span class="section-title">Navegación</span>
             <a href="#" class="nav-link active" id="navDashboard">
               <i class="ph ph-layout"></i>
-              <span>Panel General</span>
+              <span>Panel Trabajos Finales</span>
+            </a>
+            <!-- MODIFICADO: Ahora disponible para admin y docente, texto cambiado -->
+            <a href="#" class="nav-link" id="navReports">
+              <i class="ph ph-file-text"></i>
+              <span>Informes Finales</span>
             </a>
             <a href="#" class="nav-link admin-only" id="navUsers">
               <i class="ph ph-users"></i>
@@ -133,7 +138,12 @@
                 <i class="ph ph-caret-down"></i>
               </div>
             </div>
-            <div class="filter-group" style="margin-top: 16px">
+            <!-- MODIFICADO: Agregados IDs a los filter-group para control por JS -->
+            <div
+              class="filter-group"
+              style="margin-top: 16px"
+              id="adminCourseFilterGroup"
+            >
               <span class="section-title">Curso Específico</span>
               <div
                 id="adminCourseButtonContainer"
@@ -142,7 +152,11 @@
                 <!-- Admin course buttons injected here -->
               </div>
             </div>
-            <div class="filter-group" style="margin-top: 16px">
+            <div
+              class="filter-group"
+              style="margin-top: 16px"
+              id="adminStatusFilterGroup"
+            >
               <label for="adminStatusSelect">Estado del Registro</label>
               <div class="select-wrapper">
                 <select id="adminStatusSelect">
@@ -164,7 +178,7 @@
           </div>
 
           <!-- Teacher Selectors -->
-          <div class="nav-section docente-only">
+          <div class="nav-section docente-only" id="docenteSidebarSection">
             <span class="section-title">Mis Cursos</span>
             <div id="courseButtonContainer" class="course-buttons-container">
               <!-- Buttons injected here -->
@@ -312,10 +326,25 @@
             padding: 24px;
             box-shadow: var(--shadow-sm);
             border: 1px solid var(--border);
-            margin-bottom: 32px;
+            margin-bottom: 24px; /* Cambiado a 24px */
           "
         >
           <canvas id="dashboardChart" style="max-height: 350px"></canvas>
+        </div>
+
+        <!-- NUEVO: Contenedor de Filtros por Actividad -->
+        <div
+          id="activityFilterContainer"
+          class="activity-filters"
+          style="
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 24px;
+            align-items: center;
+          "
+        >
+          <!-- Los tags se inyectarán aquí dinámicamente -->
         </div>
 
         <!-- User Management View (Admin Only) -->
@@ -341,8 +370,12 @@
                   placeholder="Buscar usuario..."
                 />
               </div>
-              <div style="display: flex; gap: 12px;">
-                <button class="btn btn-outline" id="btnSyncUsers" title="Sincronizar docentes desde Parafelix">
+              <div style="display: flex; gap: 12px">
+                <button
+                  class="btn btn-outline"
+                  id="btnSyncUsers"
+                  title="Sincronizar docentes desde Parafelix"
+                >
                   <i class="ph ph-arrows-clockwise"></i>
                   <span>Sincronizar Docentes</span>
                 </button>
@@ -384,7 +417,325 @@
             <p>Cargando información desde el servidor...</p>
           </div>
         </div>
+
+        <!-- Reports View Container -->
+        <div id="reportsView" class="reports-view" style="display: none">
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Cargando cursos para informes...</p>
+          </div>
+        </div>
       </main>
+    </div>
+
+    <!-- Modal for Report Generation -->
+    <div id="reportModal" class="modal">
+      <div class="modal-content" style="padding: 24px">
+        <div class="modal-header">
+          <h2>Generar Informe Final</h2>
+          <button class="btn-icon btn-close-modal">
+            <i class="ph ph-x"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div
+            class="student-summary"
+            style="
+              margin-bottom: 24px;
+              padding: 16px;
+              background: var(--bg-app);
+              border-radius: var(--radius-md);
+            "
+          >
+            <h3 id="modalReportCourse" style="color: var(--primary)">
+              Nombre del Curso
+            </h3>
+            <p style="font-size: 14px; opacity: 0.7">
+              <br />Completa los siguientes campos para generar el informe.
+            </p>
+          </div>
+
+          <input type="hidden" id="reportCourseInput" />
+
+          <div class="form-group">
+            <label for="reportDniInput">DNI del Docente</label>
+            <input
+              type="text"
+              id="reportDniInput"
+              required
+              placeholder="Ej: 12345678"
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Periodo de Trabajo</label>
+            <div
+              style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px"
+            >
+              <div>
+                <label
+                  style="
+                    font-size: 11px;
+                    color: var(--text-muted);
+                    margin-bottom: 4px;
+                  "
+                  >Sesión 1</label
+                >
+                <input type="date" id="reportDate1Input" />
+              </div>
+              <div>
+                <label
+                  style="
+                    font-size: 11px;
+                    color: var(--text-muted);
+                    margin-bottom: 4px;
+                  "
+                  >Sesión 2</label
+                >
+                <input type="date" id="reportDate2Input" />
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Evidencias (Máx 4 imágenes por categoría)</label>
+            <div
+              style="
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                margin-top: 8px;
+              "
+            >
+              <button
+                type="button"
+                class="btn btn-outline btn-evidence"
+                id="btnEvidenciaInformacion"
+                onclick="
+                  openEvidenceModal('informacion', 'Evidencias de Información')
+                "
+                style="justify-content: space-between"
+              >
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <i class="ph ph-image"></i>
+                  <span>Evidencias de Información</span>
+                </div>
+                <span
+                  class="evidence-badge"
+                  id="badge-informacion"
+                  style="
+                    background: var(--gray-light);
+                    padding: 2px 8px;
+                    border-radius: 12px;
+                    font-size: 12px;
+                    font-weight: 700;
+                  "
+                  >0/4</span
+                >
+              </button>
+              <button
+                type="button"
+                class="btn btn-outline btn-evidence"
+                id="btnEvidenciaSesion"
+                onclick="openEvidenceModal('sesion', 'Evidencias de Sesión')"
+                style="justify-content: space-between"
+              >
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <i class="ph ph-image"></i>
+                  <span>Evidencias de Sesión</span>
+                </div>
+                <span
+                  class="evidence-badge"
+                  id="badge-sesion"
+                  style="
+                    background: var(--gray-light);
+                    padding: 2px 8px;
+                    border-radius: 12px;
+                    font-size: 12px;
+                    font-weight: 700;
+                  "
+                  >0/4</span
+                >
+              </button>
+              <button
+                type="button"
+                class="btn btn-outline btn-evidence"
+                id="btnEvidenciaEntrega"
+                onclick="openEvidenceModal('entrega', 'Evidencias de Entrega')"
+                style="justify-content: space-between"
+              >
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <i class="ph ph-image"></i>
+                  <span>Evidencias de Entrega</span>
+                </div>
+                <span
+                  class="evidence-badge"
+                  id="badge-entrega"
+                  style="
+                    background: var(--gray-light);
+                    padding: 2px 8px;
+                    border-radius: 12px;
+                    font-size: 12px;
+                    font-weight: 700;
+                  "
+                  >0/4</span
+                >
+              </button>
+            </div>
+          </div>
+
+          <!-- Sección de Firma -->
+          <div class="form-group" style="margin-top: 24px">
+            <label>Firma del Docente (Obligatorio)</label>
+            <div
+              class="signature-wrapper"
+              style="
+                border: 2px solid var(--border);
+                border-radius: var(--radius-sm);
+                background: #fff;
+                position: relative;
+                overflow: hidden;
+                height: 160px;
+              "
+            >
+              <canvas
+                id="signaturePad"
+                width="460"
+                height="160"
+                style="
+                  width: 100%;
+                  height: 100%;
+                  cursor: crosshair;
+                  touch-action: none;
+                  display: block;
+                "
+              ></canvas>
+              <button
+                type="button"
+                class="btn btn-outline"
+                id="btnClearSignature"
+                style="
+                  position: absolute;
+                  top: 8px;
+                  right: 8px;
+                  padding: 4px 10px;
+                  font-size: 11px;
+                  height: auto;
+                  background: rgba(255, 255, 255, 0.8);
+                  border-color: var(--border);
+                "
+              >
+                <i class="ph ph-eraser"></i> Limpiar
+              </button>
+            </div>
+            <small style="color: var(--text-muted)"
+              >Usa tu mouse o pantalla táctil para firmar.</small
+            >
+          </div>
+        </div>
+        <div
+          class="modal-footer"
+          style="margin-top: 32px; display: flex; gap: 12px"
+        >
+          <button class="btn btn-outline btn-close-modal flex-grow">
+            Cancelar
+          </button>
+          <button
+            id="btnGenerateReportSubmit"
+            class="btn btn-primary flex-grow"
+          >
+            <i class="ph ph-file-text"></i>
+            Generar Documento
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal for Evidence Image Pasting -->
+    <div id="evidenceModal" class="modal" style="z-index: 2500">
+      <div class="modal-content" style="max-width: 600px">
+        <div class="modal-header">
+          <h2 id="evidenceModalTitle">Añadir Evidencia</h2>
+          <button class="btn-icon" onclick="closeEvidenceModal()">
+            <i class="ph ph-x"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <!-- Input oculto para carga de archivos -->
+          <input
+            type="file"
+            id="evidenceFileInput"
+            accept="image/*"
+            multiple
+            style="display: none"
+          />
+
+          <div
+            class="paste-area"
+            id="evidencePasteArea"
+            tabindex="0"
+            onclick="document.getElementById('evidenceFileInput').click()"
+            style="
+              border: 2px dashed var(--border);
+              border-radius: var(--radius-md);
+              padding: 40px 20px;
+              text-align: center;
+              cursor: pointer;
+              outline: none;
+              transition: var(--transition);
+              background: var(--gray-light);
+              margin-bottom: 20px;
+            "
+          >
+            <i
+              class="ph ph-upload-simple"
+              style="
+                font-size: 40px;
+                color: var(--primary);
+                margin-bottom: 12px;
+              "
+            ></i>
+            <p
+              style="
+                font-size: 15px;
+                color: var(--secondary);
+                margin-bottom: 8px;
+              "
+            >
+              Presiona <strong>Ctrl + V</strong> para pegar o
+              <strong>haz clic aquí</strong> para subir imágenes.
+            </p>
+            <small style="color: var(--text-muted)"
+              >Máximo 4 imágenes por categoría.</small
+            >
+          </div>
+
+          <div
+            class="evidence-grid"
+            id="evidencePreviewGrid"
+            style="
+              display: grid;
+              grid-template-columns: repeat(2, 1fr);
+              gap: 16px;
+            "
+          >
+            <!-- Images will appear here -->
+          </div>
+        </div>
+        <div
+          class="modal-footer"
+          style="
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 24px;
+          "
+        >
+          <button class="btn btn-primary" onclick="closeEvidenceModal()">
+            <i class="ph ph-check"></i> Listo
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Modal for Grading -->
@@ -701,24 +1052,29 @@
 
     <!-- Confirmation Modal -->
     <div id="confirmModal" class="modal">
-      <div class="modal-content" style="max-width: 400px; text-align: center">
+      <div
+        class="modal-content"
+        style="max-width: 400px; padding: 32px; text-align: center"
+      >
+        <!-- Icono cambiado a ph-check-circle y color actualizado -->
         <i
-          class="ph ph-warning-circle"
-          style="font-size: 64px; color: var(--warning); margin-bottom: 16px"
+          class="ph ph-check-circle"
+          style="font-size: 64px; color: #28a745; margin-bottom: 16px"
         ></i>
-        <h2 style="margin-bottom: 12px">Confirmar Acción</h2>
+
+        <h2 style="margin-bottom: 12px">Informe Final Generado</h2>
         <p
           id="confirmMessage"
           style="color: var(--text-muted); margin-bottom: 32px"
         >
-          ¿Estás seguro de continuar?
+          ¡El proceso se completó con éxito!
         </p>
         <div style="display: flex; gap: 16px">
           <button class="btn btn-outline btn-full" id="btnCancelConfirm">
-            Cancelar
+            Cerrar
           </button>
           <button class="btn btn-primary btn-full" id="btnAcceptConfirm">
-            Confirmar
+            ABRIR INFORME FINAL
           </button>
         </div>
       </div>
@@ -731,6 +1087,34 @@
     </div>
 
     <!-- Core Logic -->
+    <!-- Fullscreen Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none">
+      <div class="loading-content">
+        <div class="logo-loader-container">
+          <div class="logo-loader">
+            <img
+              src="images/iempresa_logo.jpg"
+              class="logo-base"
+              alt="Logo Gray"
+            />
+            <div id="logoReveal" class="logo-reveal">
+              <img
+                src="images/iempresa_logo.jpg"
+                class="logo-color"
+                alt="Logo Color"
+              />
+            </div>
+          </div>
+        </div>
+        <h3 id="loadingTitle">Generando Informe...</h3>
+        <p id="loadingSubtitle">Procesando imágenes y creando el documento</p>
+        <div class="progress-container">
+          <div id="progressBar" class="progress-bar"></div>
+        </div>
+        <div id="progressText" class="progress-text">0%</div>
+      </div>
+    </div>
+
     <script src="script.js"></script>
   </body>
 </html>

@@ -14,9 +14,19 @@ let state = {
     search: "",
     teacher: "",
     status: "Pendiente",
+    actividad: "", // NUEVO FILTRO
   },
-  viewMode: "table", // MODO TABLA POR DEFECTO
+  viewMode: "table",
+  reportEvidences: {
+    informacion: [],
+    sesion: [],
+    entrega: [],
+  },
+  currentEvidenceCategory: null,
+  informes: [], // Nueva lista de informes generados
 };
+
+let signaturePad = null;
 
 // --- DOM Elements ---
 const elements = {
@@ -87,10 +97,74 @@ const elements = {
   btnRemindTeacher: document.getElementById("btnRemindTeacher"),
   remindTeacherText: document.getElementById("remindTeacherText"),
   btnSyncUsers: document.getElementById("btnSyncUsers"),
+  // New Reports Elements
+  navReports: document.getElementById("navReports"),
+  reportsView: document.getElementById("reportsView"),
+  reportModal: document.getElementById("reportModal"),
+  modalReportCourse: document.getElementById("modalReportCourse"),
+  reportCourseInput: document.getElementById("reportCourseInput"),
+  reportDniInput: document.getElementById("reportDniInput"),
+  reportDate1Input: document.getElementById("reportDate1Input"),
+  reportDate2Input: document.getElementById("reportDate2Input"),
+  reportModalTitle: document.getElementById("reportModalTitle"),
+  evidenceFileInput: document.getElementById("evidenceFileInput"),
+  btnClearSignature: document.getElementById("btnClearSignature"),
+  btnGenerateReportSubmit: document.getElementById("btnGenerateReportSubmit"),
+  docenteSidebarSection: document.getElementById("docenteSidebarSection"),
+  activityFilterContainer: document.getElementById("activityFilterContainer"),
+  evidenceModal: document.getElementById("evidenceModal"),
+  evidenceModalTitle: document.getElementById("evidenceModalTitle"),
+  evidencePasteArea: document.getElementById("evidencePasteArea"),
+  evidencePreviewGrid: document.getElementById("evidencePreviewGrid"),
+  btnEvidenciaInformacion: document.getElementById("btnEvidenciaInformacion"),
+  btnEvidenciaSesion: document.getElementById("btnEvidenciaSesion"),
+  btnEvidenciaEntrega: document.getElementById("btnEvidenciaEntrega"),
+  badgeInformacion: document.getElementById("badge-informacion"),
+  badgeSesion: document.getElementById("badge-sesion"),
+  badgeEntrega: document.getElementById("badge-entrega"),
+  // Loading Overlay
+  loadingOverlay: document.getElementById("loadingOverlay"),
+  progressBar: document.getElementById("progressBar"),
+  progressText: document.getElementById("progressText"),
+  loadingTitle: document.getElementById("loadingTitle"),
+  loadingSubtitle: document.getElementById("loadingSubtitle"),
 };
 
 // --- Initialization ---
 function init() {
+  // Inicializar Firma
+  if (!signaturePad) {
+    signaturePad = new SimpleSignaturePad("signaturePad");
+  }
+
+  if (elements.btnClearSignature) {
+    elements.btnClearSignature.onclick = () => signaturePad.clear();
+  }
+
+  // Listener para carga de archivos de evidencia
+  if (elements.evidenceFileInput) {
+    elements.evidenceFileInput.addEventListener("change", function (e) {
+      if (!state.currentEvidenceCategory) return;
+      const files = Array.from(e.target.files);
+      const remaining =
+        4 - state.reportEvidences[state.currentEvidenceCategory].length;
+
+      files.slice(0, remaining).forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          state.reportEvidences[state.currentEvidenceCategory].push(
+            event.target.result,
+          );
+          renderEvidencePreviews();
+        };
+        reader.readAsDataURL(file);
+      });
+
+      // Limpiar input para permitir subir los mismos archivos si se borran
+      e.target.value = "";
+    });
+  }
+
   const savedUser = localStorage.getItem("iempresa_user");
   const splash = document.getElementById("splashScreen");
   const splashText = document.getElementById("splashText");
@@ -151,7 +225,13 @@ function init() {
     state.filters.teacher = e.target.value;
     state.filters.course = "";
     populateAdminCourseSelect();
-    renderRecords();
+
+    // NUEVO: Decidir si recargar Panel o Vista de Informes
+    if (elements.navReports.classList.contains("active")) {
+      renderReportsView();
+    } else {
+      renderRecords();
+    }
     updateRemindButtonText(); // NUEVO
   });
 
@@ -171,6 +251,9 @@ function init() {
     if (elements.navUsers.classList.contains("active")) {
       showToast("Sincronizando lista de usuarios...");
       fetchUserList().then(() => renderUserTable());
+    } else if (elements.navReports.classList.contains("active")) {
+      showToast("Sincronizando informes y cursos...");
+      loadData();
     } else {
       showToast("Sincronizando con la base de datos...");
       loadData();
@@ -187,6 +270,12 @@ function init() {
     e.preventDefault();
     showUserManagementView();
   });
+  if (elements.navReports) {
+    elements.navReports.addEventListener("click", (e) => {
+      e.preventDefault();
+      showReportsView();
+    });
+  }
 
   // Gestión de Usuarios
   elements.btnAddUser.addEventListener("click", () => openUserModal());
@@ -524,8 +613,13 @@ function updateCourseButtonsState() {
 
 // --- Data Operations ---
 async function loadData() {
+  const isReportsView = elements.navReports.classList.contains("active");
+  const targetGrid = isReportsView
+    ? elements.reportsView
+    : elements.recordsGrid;
+
   // Diseño de carga más profesional y centrado
-  elements.recordsGrid.innerHTML = `
+  targetGrid.innerHTML = `
         <div class="loading-state" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 24px; background: var(--white); border-radius: var(--radius-md); border: 1px dashed var(--border); box-shadow: var(--shadow-sm);">
             <div class="spinner" style="width: 48px; height: 48px; border-width: 4px; border-color: rgba(241, 90, 36, 0.1); border-top-color: var(--primary); margin-bottom: 24px;"></div>
             <h3 style="color: var(--secondary); font-size: 20px; margin-bottom: 8px;">Sincronizando con el servidor</h3>
@@ -534,23 +628,70 @@ async function loadData() {
     `;
 
   try {
-    const records = await callApi("getData", {
-      email: state.user.name,
-      role: state.user.role,
-    });
+    const [records, informes] = await Promise.all([
+      callApi("getData", {
+        email: state.user.name,
+        role: state.user.role,
+      }),
+      callApi("getInformes", {
+        email: state.user.name,
+        role: state.user.role,
+      }),
+    ]);
     state.records = records;
-    renderRecords();
-    updateStats();
+    state.informes = informes;
+
+    if (isReportsView) {
+      renderReportsView();
+    } else {
+      renderActivityTags();
+      renderRecords();
+      updateStats();
+    }
   } catch (error) {
     showToast("Error al sincronizar datos", "danger");
-    // Limpiar estado de carga en caso de error
-    elements.recordsGrid.innerHTML = `
+    targetGrid.innerHTML = `
         <div class="loading-state" style="grid-column: 1 / -1; text-align: center; padding: 60px;">
             <i class="ph ph-warning-circle" style="font-size: 48px; color: var(--danger); margin-bottom: 16px; display: block;"></i>
             <p style="color: var(--danger);">Ocurrió un problema al cargar los datos.</p>
         </div>
     `;
   }
+}
+
+// --- Renderizar Tags de Actividad ---
+function renderActivityTags() {
+  const container = document.getElementById("activityFilterContainer");
+  if (!container) return;
+
+  // 1. Obtener actividades únicas (Asignar "Trabajo Final" a los vacíos)
+  const activities = new Set();
+  state.records.forEach((r) => {
+    const act = (r.actividad || "Trabajo Final").toString().trim();
+    activities.add(act);
+  });
+
+  // 2. Construir el HTML
+  let html = `<span style="font-weight: 600; color: var(--secondary); display: flex; align-items: center; margin-right: 8px;"><i class="ph ph-funnel" style="margin-right: 4px; font-size: 18px;"></i> Actividad:</span>`;
+
+  html += `<button class="activity-tag ${state.filters.actividad === "" ? "active" : ""}" data-actividad="">Todas</button>`;
+
+  Array.from(activities)
+    .sort()
+    .forEach((act) => {
+      html += `<button class="activity-tag ${state.filters.actividad === act ? "active" : ""}" data-actividad="${act}">${act}</button>`;
+    });
+
+  container.innerHTML = html;
+
+  // 3. Agregar Eventos Click
+  container.querySelectorAll(".activity-tag").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      state.filters.actividad = e.target.getAttribute("data-actividad");
+      renderActivityTags(); // Actualizar clases visuales
+      renderRecords(); // Actualizar tabla/cartas
+    });
+  });
 }
 
 // --- UI Rendering ---
@@ -605,7 +746,27 @@ function renderRecords() {
       (r.alumno || "").toLowerCase().includes(searchStr) ||
       (r.dni || "").toString().includes(searchStr);
 
-    return matchesTeacher && matchesCourse && matchesStatus && matchesSearch;
+    // NUEVO: Filtro por Actividad
+    let matchesActividad = true;
+    if (state.filters.actividad !== "") {
+      const rowActividad = (r.actividad || "Trabajo Final")
+        .toString()
+        .trim()
+        .toLowerCase();
+      const filterActividad = state.filters.actividad
+        .toString()
+        .trim()
+        .toLowerCase();
+      matchesActividad = rowActividad === filterActividad;
+    }
+
+    return (
+      matchesTeacher &&
+      matchesCourse &&
+      matchesStatus &&
+      matchesSearch &&
+      matchesActividad
+    );
   });
 
   // 2. ORDENAMIENTO (El ID es un timestamp, nos sirve para fechas)
@@ -814,7 +975,21 @@ function updateStats() {
         rowCourse.includes(filterCourse) || filterCourse.includes(rowCourse);
     }
 
-    return matchesTeacher && matchesCourse;
+    // NUEVO: Filtro por Actividad
+    let matchesActividad = true;
+    if (state.filters.actividad !== "") {
+      const rowActividad = (r.actividad || "Trabajo Final")
+        .toString()
+        .trim()
+        .toLowerCase();
+      const filterActividad = state.filters.actividad
+        .toString()
+        .trim()
+        .toLowerCase();
+      matchesActividad = rowActividad === filterActividad;
+    }
+
+    return matchesTeacher && matchesCourse && matchesActividad;
   });
 
   // 1. ACTUALIZAR NOMBRES DE LOS RECUADROS SEGÚN EL ROL Y FILTRO
@@ -822,28 +997,28 @@ function updateStats() {
     if (state.filters.teacher === "") {
       // Vista global: Todos los docentes
       elements.statPending.previousElementSibling.textContent =
-        "Docentes con Cursos Pendientes";
+        "Docentes con ALGÚN Curso PENDIENTE";
       elements.statCompleted.previousElementSibling.textContent =
-        "Docentes con Calificaciones Completadas";
+        "Docentes con TODAS sus Calificaciones COMPLETADAS";
       elements.statTotal.previousElementSibling.textContent =
-        "Docentes con Calificaciones Enviadas";
+        "Docentes con SÓLO Calificaciones ENVIADAS";
     } else {
       // Vista individual: Un docente específico
       elements.statPending.previousElementSibling.textContent =
-        "El Docente tiene aún Registros Pendientes";
+        "El Docente tiene aún Registros PENDIENTES";
       elements.statCompleted.previousElementSibling.textContent =
-        "El Docente tiene aún Registros Completados";
+        "El Docente tiene TODOS los Registros COMPLETADOS";
       elements.statTotal.previousElementSibling.textContent =
-        "El Docente tiene todos los Registros Enviados";
+        "El Docente tiene TODOS los Registros ENVIADOS";
     }
   } else {
     // Vista Docente
     elements.statPending.previousElementSibling.textContent =
-      "Alumnos Pendientes de Calificar";
+      "Alumnos PENDIENTES de Calificar";
     elements.statCompleted.previousElementSibling.textContent =
-      "Alumnos con Revisiones Completadas";
+      "Alumnos con Revisiones COMPLETADAS";
     elements.statTotal.previousElementSibling.textContent =
-      "Alumnos con Registros Reportados";
+      "Alumnos con Revisiones ENVIADAS";
   }
 
   // 2. LÓGICA DE CONTEO
@@ -1162,7 +1337,8 @@ async function saveStudentEdit(id) {
 function closeModal() {
   elements.gradingModal.classList.remove("active");
   elements.editStudentModal.classList.remove("active");
-  elements.userModal.classList.remove("active");
+  if (elements.userModal) elements.userModal.classList.remove("active");
+  if (elements.reportModal) elements.reportModal.classList.remove("active");
 }
 
 // --- Batch Actions ---
@@ -1373,33 +1549,48 @@ function viewGrade(id) {
  * Restaura la visualización de estadísticas, gráficos y registros
  */
 function showDashboardView() {
+  if (elements.navReports) elements.navReports.classList.remove("active");
+  if (elements.navUsers) elements.navUsers.classList.remove("active");
   elements.navDashboard.classList.add("active");
-  elements.navUsers.classList.remove("active");
+
+  if (elements.reportsView) elements.reportsView.style.display = "none";
   elements.userManagementView.style.display = "none";
 
-  // Restaurar títulos y controles de búsqueda
   document.getElementById("pageTitle").textContent = "Entregas de Alumnos";
   document.getElementById("pageSubtitle").textContent =
     "Gestiona y califica las evidencias recibidas";
 
-  // Mostrar elementos del dashboard
   elements.statsBar.style.display = "grid";
   elements.chartContainer.style.display = "block";
-  elements.recordsGrid.style.display = "grid";
+  elements.recordsGrid.style.display =
+    state.viewMode === "table" ? "block" : "grid";
   elements.searchInput.parentElement.style.display = "flex";
   elements.btnToggleView.style.display = "flex";
 
+  if (elements.activityFilterContainer)
+    elements.activityFilterContainer.style.display = "flex";
+
   if (state.user.role === "admin") {
     elements.adminFiltersSection.style.display = "block";
+    // RESTAURAR FILTROS VISUALMENTE
+    document.getElementById("adminCourseFilterGroup").style.display = "block";
+    document.getElementById("adminStatusFilterGroup").style.display = "block";
+
+    // Sincronizar UI con el estado actual
+    elements.adminStatusSelect.value = state.filters.status;
+    populateAdminCourseSelect();
+
     elements.btnRemindTeacher.style.display = "flex";
     updateRemindButtonText();
+  } else {
+    if (elements.docenteSidebarSection)
+      elements.docenteSidebarSection.style.display = "block";
+
+    // Para docente, también restaurar botones de curso
+    populateTeacherCourseSelectFromMapping();
   }
 
-  // Si estamos en modo tabla, asegurar que el display sea correcto
-  if (state.viewMode === "table") {
-    elements.recordsGrid.style.display = "block";
-  }
-
+  // RE-RENDERIZAR para aplicar los filtros que estaban activos
   renderRecords();
 }
 
@@ -1430,8 +1621,10 @@ function showDashboard() {
 
 function showUserManagementView() {
   elements.navDashboard.classList.remove("active");
+  if (elements.navReports) elements.navReports.classList.remove("active");
   elements.navUsers.classList.add("active");
   elements.userManagementView.style.display = "block";
+  if (elements.reportsView) elements.reportsView.style.display = "none";
 
   // Set users titles
   document.getElementById("pageTitle").textContent = "Gestión de Usuarios";
@@ -1457,6 +1650,606 @@ function showUserManagementView() {
   if (masterUserCb) masterUserCb.checked = false;
 
   renderUserTable();
+}
+
+function showDashboardView() {
+  if (elements.navReports) elements.navReports.classList.remove("active");
+  if (elements.navUsers) elements.navUsers.classList.remove("active");
+  elements.navDashboard.classList.add("active");
+
+  if (elements.reportsView) elements.reportsView.style.display = "none";
+  elements.userManagementView.style.display = "none";
+
+  // Set titles
+  document.getElementById("pageTitle").textContent = "Entregas de Alumnos";
+  document.getElementById("pageSubtitle").textContent =
+    "Gestiona y califica las evidencias recibidas";
+
+  // Show dashboard elements
+  elements.statsBar.style.display = "grid";
+  elements.chartContainer.style.display = "block";
+  elements.recordsGrid.style.display =
+    state.viewMode === "table" ? "block" : "grid";
+  elements.searchInput.parentElement.style.display = "flex";
+  elements.btnToggleView.style.display = "flex";
+  if (elements.activityFilterContainer)
+    elements.activityFilterContainer.style.display = "flex";
+
+  if (state.user.role === "admin") {
+    elements.adminFiltersSection.style.display = "block";
+    elements.btnRemindTeacher.style.display = "flex";
+  } else {
+    if (elements.docenteSidebarSection)
+      elements.docenteSidebarSection.style.display = "block";
+  }
+}
+
+function showReportsView() {
+  elements.navDashboard.classList.remove("active");
+  if (elements.navUsers) elements.navUsers.classList.remove("active");
+  elements.navReports.classList.add("active");
+
+  elements.userManagementView.style.display = "none";
+  elements.reportsView.style.display = "grid";
+
+  // Títulos dinámicos por Rol
+  if (state.user.role === "admin") {
+    document.getElementById("pageTitle").textContent = "Gestión de Informes";
+    document.getElementById("pageSubtitle").textContent =
+      "Habilita y supervisa los informes finales de los docentes";
+  } else {
+    document.getElementById("pageTitle").textContent = "Mis Informes";
+    document.getElementById("pageSubtitle").textContent =
+      "Genera informes finales de los cursos habilitados";
+  }
+
+  // Ocultar elementos del dashboard principal
+  elements.statsBar.style.display = "none";
+  elements.chartContainer.style.display = "none";
+  elements.recordsGrid.style.display = "none";
+
+  // Manejo de la barra lateral (Ocultar filtros innecesarios del admin)
+  if (elements.adminFiltersSection) {
+    if (state.user.role === "admin") {
+      elements.adminFiltersSection.style.display = "block";
+      document.getElementById("adminCourseFilterGroup").style.display = "none";
+      document.getElementById("adminStatusFilterGroup").style.display = "none";
+    } else {
+      elements.adminFiltersSection.style.display = "none";
+    }
+  }
+  if (elements.docenteSidebarSection)
+    elements.docenteSidebarSection.style.display = "none";
+  if (elements.activityFilterContainer)
+    elements.activityFilterContainer.style.display = "none";
+
+  elements.searchInput.parentElement.style.display = "none";
+  elements.btnToggleView.style.display = "none";
+  document.getElementById("btnSelectAll").style.display = "none";
+  elements.batchActionBar.style.display = "none";
+  elements.btnRemindTeacher.style.display = "none";
+
+  renderReportsView();
+}
+
+function renderReportsView() {
+  let targetTeacher = "";
+  let sourceCourses = [];
+
+  if (state.user.role === "admin") {
+    targetTeacher = state.filters.teacher;
+    if (!targetTeacher) {
+      elements.reportsView.innerHTML = `
+        <div class="loading-state" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 24px; background: var(--white); border-radius: var(--radius-md); border: 1px dashed var(--border); box-shadow: var(--shadow-sm);">
+            <div style="width: 64px; height: 64px; background: rgba(10, 31, 68, 0.05); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+                <i class="ph ph-users" style="font-size: 32px; color: var(--secondary);"></i>
+            </div>
+            <h3 style="color: var(--secondary); font-size: 20px; margin-bottom: 8px;">Selecciona un Docente</h3>
+            <p style="color: var(--text-muted); font-size: 15px;">Usa el filtro lateral para ver y habilitar los informes de un docente.</p>
+        </div>
+      `;
+      return;
+    }
+    // Para Admin: Obtiene TODOS los cursos que dicta el docente desde la data principal de registros
+    sourceCourses = [
+      ...new Set(
+        state.records
+          .filter(
+            (r) =>
+              (r.docente || "").toString().trim().toLowerCase() ===
+              targetTeacher.toLowerCase(),
+          )
+          .map((r) => r.curso),
+      ),
+    ];
+  } else {
+    targetTeacher = state.user.name;
+    // Para Docente: SÓLO obtiene los cursos que ya han sido habilitados (existen en la hoja Informes)
+    sourceCourses = [
+      ...new Set(
+        state.informes
+          .filter(
+            (inf) =>
+              (inf.docente || "").toString().trim().toLowerCase() ===
+              targetTeacher.toLowerCase(),
+          )
+          .map((inf) => inf.curso),
+      ),
+    ];
+  }
+
+  // 1. Obtener cursos únicos y asignarles ciclo
+  const coursesData = sourceCourses.map((course) => {
+    let cicloNum = 99;
+    let cicloText = "";
+
+    if (course.includes("-")) {
+      const parts = course.split("-");
+      if (parts.length > 1) {
+        const firstChar = parts[1].trim().charAt(0);
+        if (firstChar && !isNaN(firstChar)) {
+          const num = parseInt(firstChar);
+          cicloNum = num;
+          cicloText = `Ciclo 0${num}`;
+        }
+      }
+    }
+    return { name: course, cicloNum, cicloText };
+  });
+
+  // 2. Ordenar por Ciclo y nombre
+  coursesData.sort((a, b) => {
+    if (a.cicloNum !== b.cicloNum) return a.cicloNum - b.cicloNum;
+    return a.name.localeCompare(b.name);
+  });
+
+  if (coursesData.length === 0) {
+    elements.reportsView.innerHTML = `
+      <div class="loading-state" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 24px; background: var(--white); border-radius: var(--radius-md); border: 1px dashed var(--border); box-shadow: var(--shadow-sm);">
+          <div style="width: 64px; height: 64px; background: rgba(10, 31, 68, 0.05); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+              <i class="ph ph-folder-open" style="font-size: 32px; color: var(--secondary);"></i>
+          </div>
+          <h3 style="color: var(--secondary); font-size: 20px; margin-bottom: 8px;">${state.user.role === "admin" ? "El docente no tiene cursos registrados" : "No tienes informes habilitados"}</h3>
+          <p style="color: var(--text-muted); font-size: 15px;">${state.user.role === "admin" ? "Este docente no posee entregas recibidas de cursos." : "El administrador aún no ha habilitado informes para tus cursos."}</p>
+      </div>
+    `;
+    return;
+  }
+
+  let html =
+    '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 24px; width: 100%;">';
+  coursesData.forEach((item) => {
+    // Buscar si existe en la hoja Informes
+    const existingReport = state.informes.find(
+      (inf) =>
+        inf.curso &&
+        inf.curso.toString().trim().toLowerCase() ===
+          item.name.toLowerCase().trim() &&
+        inf.docente.toLowerCase() === targetTeacher.toLowerCase(),
+    );
+
+    const status = existingReport ? existingReport.estado : "No Habilitado";
+    let finalUrl = null;
+    if (existingReport && existingReport.url_informe) {
+      if (state.user.role === "admin") {
+        // Admin abre en modo editor
+        finalUrl = existingReport.url_informe.replace(
+          /\/(preview|viewer).*$/,
+          "/edit",
+        );
+      } else {
+        // Docente abre en modo visor (PDF-like)
+        finalUrl = existingReport.url_informe.replace(
+          /\/(edit|preview).*$/,
+          "/preview",
+        );
+      }
+    }
+
+    html += `
+      <div class="student-card report-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <i class="ph ph-book-open" style="font-size: 20px; color: var(--primary);"></i>
+            ${item.cicloText ? `<span style="font-size: 11px; font-weight: 700; color: var(--primary); background: rgba(241, 90, 36, 0.1); padding: 2px 8px; border-radius: 12px;">${item.cicloText}</span>` : ""}
+          </div>
+          
+          ${
+            state.user.role === "docente" && status === "Completado"
+              ? `
+            <div style="display: flex; gap: 4px;">
+              <button class="btn-icon" onclick="downloadReportPdf('${finalUrl}')" style="width: 28px; height: 28px; font-size: 14px; background: #fff5f5; border-color: #feb2b2; color: #c53030;" title="Descargar PDF">
+                <i class="ph ph-file-pdf"></i>
+              </button>
+              <button class="btn-icon" onclick="openReportModal('${item.name.replace(/'/g, "\\'")}', true)" style="width: 28px; height: 28px; font-size: 14px; background: white; border-color: var(--border);" title="Editar y Volver a Generar">
+                <i class="ph ph-pencil-simple"></i>
+              </button>
+            </div>
+          `
+              : ""
+          }
+          
+          ${status !== "Completado" ? `<span class="status-badge status-${status.toLowerCase().replace(" ", "-")}" style="font-size: 10px; padding: 4px 8px;">${status}</span>` : ""}
+        </div>
+        <div class="card-body">
+          <h3>${item.name}</h3>
+        </div>
+        <div class="card-footer">
+    `;
+
+    // LÓGICA DE BOTONES (ADMIN VS DOCENTE)
+    if (state.user.role === "admin") {
+      if (status === "No Habilitado") {
+        html += `
+          <button class="btn btn-primary btn-full" onclick="enableReport('${targetTeacher.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}')" style="height: 40px; font-size: 13px;">
+            <i class="ph ph-check-circle"></i> Habilitar Informe
+          </button>
+        `;
+      } else if (status === "Pendiente") {
+        html += `
+          <button class="btn btn-outline btn-full" disabled style="height: 40px; font-size: 13px; opacity: 0.7; cursor: not-allowed; border-style: dashed;">
+            <i class="ph ph-hourglass-high"></i> Esperando al Docente
+          </button>
+        `;
+      } else {
+        html += `
+          <button class="btn btn-outline btn-full" onclick="window.open('${finalUrl}', '_blank')" style="background: white; border-color: var(--primary); color: var(--primary); font-weight: 600; height: 40px; font-size: 13px;">
+            <i class="ph ph-eye"></i> Ver Informe Generado
+          </button>
+        `;
+      }
+    } else {
+      if (status === "Pendiente") {
+        html += `
+          <button class="btn btn-primary btn-full" onclick="openReportModal('${item.name.replace(/'/g, "\\'")}')" style="height: 40px; font-size: 13px;">
+            <i class="ph ph-file-text"></i> Generar Informe Final
+          </button>
+        `;
+      } else if (status === "Completado") {
+        html += `
+          <button class="btn btn-outline btn-full" onclick="window.open('${finalUrl}', '_blank')" style="background: white; border-color: var(--primary); color: var(--primary); font-weight: 600; height: 40px; font-size: 13px;">
+            <i class="ph ph-eye"></i> Ver Informe Generado
+          </button>
+        `;
+      }
+    }
+
+    html += `
+        </div>
+      </div>
+    `;
+  });
+  html += "</div>";
+  elements.reportsView.innerHTML = html;
+}
+
+// Nueva función de ayuda para habilitar informes
+async function enableReport(docente, curso) {
+  const confirmed = await showConfirm(
+    `¿Habilitar el Informe Final para el curso "${curso}"?\n\nEl docente podrá verlo y generarlo desde su panel de control.`,
+  );
+  if (!confirmed) return;
+
+  showToast("Habilitando informe...", "info");
+  try {
+    const res = await callApi("initReport", { docente, curso });
+    if (res.success) {
+      showToast(res.message, "success");
+      loadData(); // Recarga toda la data para refrescar estados
+    } else {
+      showToast(res.message, "danger");
+    }
+  } catch (error) {
+    showToast("Error al procesar la habilitación del informe", "danger");
+  }
+}
+
+/**
+ * Descarga el informe en formato PDF convirtiendo la URL de visualización de Google Docs
+ */
+function downloadReportPdf(url) {
+  if (!url) {
+    showToast("URL del informe no válida", "warning");
+    return;
+  }
+  // Convertir URL de preview/edit a export PDF
+  const pdfUrl = url
+    .replace(/\/(edit|preview|viewer).*$/, "/export?format=pdf")
+    .replace(/\/view\?usp=drivesdk$/, "/export?format=pdf");
+
+  window.open(pdfUrl, "_blank");
+}
+
+function openReportModal(courseName, isEdit = false) {
+  elements.modalReportCourse.textContent = courseName;
+  elements.reportCourseInput.value = courseName;
+  elements.reportDniInput.value = "";
+  if (elements.reportDate1Input) elements.reportDate1Input.value = "";
+  if (elements.reportDate2Input) elements.reportDate2Input.value = "";
+
+  // Reset evidences
+  state.reportEvidences = { informacion: [], sesion: [], entrega: [] };
+
+  if (isEdit) {
+    const report = state.informes.find(
+      (inf) =>
+        inf.curso &&
+        inf.curso.toString().trim().toLowerCase() ===
+          courseName.toLowerCase().trim(),
+    );
+
+    if (report) {
+      if (report.dni) elements.reportDniInput.value = report.dni;
+
+      // Formatear fechas para los inputs tipo date (YYYY-MM-DD)
+      const formatDate = (dateVal) => {
+        if (!dateVal) return "";
+        const d = new Date(dateVal);
+        if (isNaN(d.getTime())) return "";
+        // Ajuste de zona horaria para evitar desfase de un día
+        const userTimezoneOffset = d.getTimezoneOffset() * 60000;
+        const localDate = new Date(d.getTime() + userTimezoneOffset);
+        return d.toISOString().split("T")[0];
+      };
+
+      if (elements.reportDate1Input)
+        elements.reportDate1Input.value = formatDate(report.periodo_1);
+      if (elements.reportDate2Input)
+        elements.reportDate2Input.value = formatDate(report.periodo_2);
+
+      // Pre-cargar evidencias (vienen separadas por salto de línea en la hoja)
+      const splitEvidences = (val) => {
+        if (!val || val === "Sin evidencia") return [];
+        return val
+          .toString()
+          .split("\n")
+          .filter(Boolean)
+          .map((url) => {
+            const trimmedUrl = url.trim();
+            // Convertir links de Drive a formato de miniatura para visualización web sin restricciones
+            if (trimmedUrl.includes("drive.google.com/file/d/")) {
+              const id = trimmedUrl.split("/d/")[1].split("/")[0];
+              // Usar el endpoint thumbnail para saltarse las restricciones de incrustado (CORS)
+              return `https://drive.google.com/thumbnail?id=${id}&sz=w800`;
+            }
+            return trimmedUrl;
+          });
+      };
+
+      state.reportEvidences.informacion = splitEvidences(
+        report.evidencias_informacion,
+      );
+      state.reportEvidences.sesion = splitEvidences(report.evidencias_sesion);
+      state.reportEvidences.entrega = splitEvidences(report.evidencias_entrega);
+    }
+  }
+
+  updateEvidenceButtonsUI();
+
+  // Reset Firma
+  if (signaturePad) {
+    signaturePad.clear();
+    setTimeout(() => signaturePad.resizeCanvas(), 100);
+  }
+
+  elements.reportModal.classList.add("active");
+  elements.btnGenerateReportSubmit.onclick = handleGenerateReportSubmit;
+}
+
+// --- Image Paste Logic ---
+function openEvidenceModal(category, title) {
+  state.currentEvidenceCategory = category;
+  if (elements.evidenceModalTitle)
+    elements.evidenceModalTitle.textContent = title;
+  renderEvidencePreviews();
+  if (elements.evidenceModal) elements.evidenceModal.classList.add("active");
+  if (elements.evidencePasteArea) elements.evidencePasteArea.focus();
+}
+
+function closeEvidenceModal() {
+  if (elements.evidenceModal) elements.evidenceModal.classList.remove("active");
+  state.currentEvidenceCategory = null;
+  updateEvidenceButtonsUI();
+}
+
+function updateEvidenceButtonsUI() {
+  const categories = ["informacion", "sesion", "entrega"];
+  categories.forEach((cat) => {
+    const count = state.reportEvidences[cat].length;
+    const badge =
+      elements["badge" + cat.charAt(0).toUpperCase() + cat.slice(1)];
+    const btn =
+      elements["btnEvidencia" + cat.charAt(0).toUpperCase() + cat.slice(1)];
+
+    if (badge) badge.textContent = `${count}/4`;
+    if (btn) {
+      if (count > 0) {
+        btn.classList.add("btn-success");
+        btn.style.borderColor = "var(--success)";
+        btn.style.color = "var(--success)";
+        badge.style.background = "var(--success)";
+        badge.style.color = "white";
+      } else {
+        btn.classList.remove("btn-success");
+        btn.style.borderColor = "var(--border)";
+        btn.style.color = "var(--secondary)";
+        badge.style.background = "var(--gray-light)";
+        badge.style.color = "var(--secondary)";
+      }
+    }
+  });
+}
+
+function renderEvidencePreviews() {
+  if (!elements.evidencePreviewGrid || !state.currentEvidenceCategory) return;
+  const images = state.reportEvidences[state.currentEvidenceCategory];
+
+  elements.evidencePreviewGrid.innerHTML = images
+    .map(
+      (base64, index) => `
+    <div style="position: relative; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border); aspect-ratio: 16/9;">
+      <img src="${base64}" style="width: 100%; height: 100%; object-fit: cover;" />
+      <button class="btn-icon" onclick="removeEvidenceImage(${index})" style="position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; font-size: 14px; background: rgba(255,255,255,0.9); border: none; color: var(--danger);">
+        <i class="ph ph-x"></i>
+      </button>
+    </div>
+  `,
+    )
+    .join("");
+}
+
+function removeEvidenceImage(index) {
+  if (!state.currentEvidenceCategory) return;
+  state.reportEvidences[state.currentEvidenceCategory].splice(index, 1);
+  renderEvidencePreviews();
+}
+
+document.addEventListener("paste", function (e) {
+  if (
+    !state.currentEvidenceCategory ||
+    !elements.evidenceModal.classList.contains("active")
+  )
+    return;
+
+  if (state.reportEvidences[state.currentEvidenceCategory].length >= 4) {
+    showToast("Máximo 4 imágenes por categoría", "warning");
+    return;
+  }
+
+  const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+  let imageFound = false;
+
+  for (let index in items) {
+    const item = items[index];
+    if (item.kind === "file" && item.type.indexOf("image/") !== -1) {
+      imageFound = true;
+      const blob = item.getAsFile();
+      const reader = new FileReader();
+
+      reader.onload = function (event) {
+        state.reportEvidences[state.currentEvidenceCategory].push(
+          event.target.result,
+        );
+        renderEvidencePreviews();
+      };
+
+      reader.readAsDataURL(blob);
+      break; // Solo procesar la primera imagen que encuentre
+    }
+  }
+
+  if (!imageFound) {
+    showToast("No se encontró una imagen en el portapapeles", "warning");
+  }
+});
+
+async function handleGenerateReportSubmit() {
+  const course = elements.reportCourseInput.value;
+  const dni = elements.reportDniInput.value.trim();
+  const date1 = elements.reportDate1Input.value;
+  const date2 = elements.reportDate2Input.value;
+
+  if (!dni || !date1 || !date2) {
+    showToast("Por favor, completa los campos de DNI y Periodo", "warning");
+    return;
+  }
+
+  // Validar longitud y formato del DNI
+  const dniRegex = /^\d{8}$/;
+  if (!dniRegex.test(dni)) {
+    showToast("El DNI del docente debe tener exactamente 8 números", "warning");
+    return;
+  }
+
+  // Validate evidences
+  if (
+    state.reportEvidences.informacion.length === 0 ||
+    state.reportEvidences.sesion.length === 0 ||
+    state.reportEvidences.entrega.length === 0
+  ) {
+    showToast(
+      "Debes añadir al menos 1 imagen por cada tipo de evidencia",
+      "warning",
+    );
+    return;
+  }
+
+  // Validar firma
+  if (signaturePad && signaturePad.isEmpty()) {
+    showToast("Por favor, ingresa tu firma", "warning");
+    return;
+  }
+
+  // Mostrar Loading Overlay Fullscreen
+  elements.loadingOverlay.style.display = "flex";
+  elements.progressBar.style.width = "0%";
+  elements.progressText.textContent = "0%";
+  elements.loadingTitle.textContent = "Generando Informe...";
+
+  let progress = 0;
+  const progressInterval = setInterval(() => {
+    if (progress < 90) {
+      progress += Math.random() * 5;
+      if (progress > 90) progress = 90;
+      elements.progressBar.style.width = progress + "%";
+      elements.progressText.textContent = Math.floor(progress) + "%";
+      // Actualizar revelado de logo
+      const logoReveal = document.getElementById("logoReveal");
+      if (logoReveal) logoReveal.style.setProperty("--logo-p", progress + "%");
+    }
+  }, 400);
+
+  try {
+    const firmaBase64 = signaturePad ? signaturePad.toDataURL() : null;
+
+    const res = await callApi("generateReport", {
+      docente: state.user.name,
+      curso: course,
+      dni: dni,
+      fecha1: date1,
+      fecha2: date2,
+      evidencias_informacion: state.reportEvidences.informacion,
+      evidencias_sesion: state.reportEvidences.sesion,
+      evidencias_entrega: state.reportEvidences.entrega,
+      firma: firmaBase64,
+    });
+
+    clearInterval(progressInterval);
+    elements.progressBar.style.width = "100%";
+    elements.progressText.textContent = "100%";
+    const logoReveal = document.getElementById("logoReveal");
+    if (logoReveal) logoReveal.style.setProperty("--logo-p", "100%");
+
+    if (res.success) {
+      showToast("Informe generado exitosamente", "success");
+      elements.reportModal.classList.remove("active");
+
+      // Actualizar datos locales para mostrar el nuevo botón
+      loadData();
+
+      setTimeout(() => {
+        elements.loadingOverlay.style.display = "none";
+        showConfirm(
+          `¡El informe para ${course} se ha generado correctamente! ¿Deseas abrirlo ahora?`,
+        ).then((confirmed) => {
+          if (confirmed) {
+            const viewerUrl = res.url.replace(
+              /\/(edit|preview).*$/,
+              "/preview",
+            );
+            window.open(viewerUrl, "_blank");
+          }
+        });
+      }, 500);
+    } else {
+      elements.loadingOverlay.style.display = "none";
+      showToast(res.message, "danger");
+    }
+  } catch (error) {
+    clearInterval(progressInterval);
+    elements.loadingOverlay.style.display = "none";
+    showToast("Error al generar el informe: " + error.message, "danger");
+  }
 }
 
 function renderUserTable() {
@@ -1839,3 +2632,94 @@ async function handleSyncUsers() {
 }
 
 window.onload = init;
+// --- Signature Pad Logic ---
+class SimpleSignaturePad {
+  constructor(canvasId) {
+    this.canvas = document.getElementById(canvasId);
+    if (!this.canvas) return;
+    this.ctx = this.canvas.getContext("2d");
+    this.isDrawing = false;
+    this.hasSignature = false;
+    this.setupListeners();
+    this.resizeCanvas();
+  }
+
+  setupListeners() {
+    const startDrawing = (e) => {
+      this.isDrawing = true;
+      this.hasSignature = true;
+      this.ctx.beginPath();
+      const pos = this.getPos(e);
+      this.ctx.moveTo(pos.x, pos.y);
+      e.preventDefault();
+    };
+
+    const draw = (e) => {
+      if (!this.isDrawing) return;
+      const pos = this.getPos(e);
+      this.ctx.lineTo(pos.x, pos.y);
+      this.ctx.stroke();
+      e.preventDefault();
+    };
+
+    const stopDrawing = () => {
+      this.isDrawing = false;
+      this.ctx.closePath();
+    };
+
+    this.canvas.addEventListener("mousedown", startDrawing);
+    this.canvas.addEventListener("mousemove", draw);
+    window.addEventListener("mouseup", stopDrawing);
+
+    this.canvas.addEventListener("touchstart", startDrawing, {
+      passive: false,
+    });
+    this.canvas.addEventListener("touchmove", draw, { passive: false });
+    this.canvas.addEventListener("touchend", stopDrawing);
+
+    this.ctx.lineWidth = 2.5;
+    this.ctx.lineCap = "round";
+    this.ctx.lineJoin = "round";
+    this.ctx.strokeStyle = "#000";
+  }
+
+  getPos(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    // Calcular escala si el canvas está siendo redimensionado por CSS
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    };
+  }
+
+  resizeCanvas() {
+    // Solo para asegurarse que el buffer interno coincida con el tamaño visual
+    const rect = this.canvas.getBoundingClientRect();
+    this.canvas.width = rect.width;
+    this.canvas.height = rect.height;
+    // Reiniciar contexto tras redimensionar buffer
+    this.ctx.lineWidth = 2.5;
+    this.ctx.lineCap = "round";
+    this.ctx.lineJoin = "round";
+    this.ctx.strokeStyle = "#000";
+  }
+
+  clear() {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.hasSignature = false;
+  }
+
+  isEmpty() {
+    return !this.hasSignature;
+  }
+
+  toDataURL() {
+    return this.canvas.toDataURL("image/png");
+  }
+}
