@@ -260,6 +260,19 @@ function init() {
       splash.classList.add("hidden");
       // Se elimina permanentemente del DOM tras la transición para evitar el bug visual
       setTimeout(() => splash.remove(), 500);
+
+      // Deshabilitar botones de navegación por 2 segundos tras aparecer interfaz
+      const navLinks = document.querySelectorAll(".nav-link");
+      navLinks.forEach((link) => {
+        link.style.pointerEvents = "none";
+        link.style.opacity = "0.6";
+      });
+      setTimeout(() => {
+        navLinks.forEach((link) => {
+          link.style.pointerEvents = "";
+          link.style.opacity = "";
+        });
+      }, 2000);
     }
   }, 3500);
 
