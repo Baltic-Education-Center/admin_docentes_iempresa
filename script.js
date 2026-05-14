@@ -318,13 +318,10 @@ function init() {
     if (elements.navUsers.classList.contains("active")) {
       showToast("Sincronizando lista de usuarios...");
       fetchUserList().then(() => renderUserTable());
-    } else if (elements.navReports.classList.contains("active")) {
-      showToast("Sincronizando informes y cursos...");
-      loadData();
     } else {
       showToast("Sincronizando con la base de datos...");
-      loadData();
-      loadMappingData();
+      // Forzamos a true para que limpie la caché de Parafelix si el usuario lo pide manual
+      syncDashboardData(true);
     }
   });
 
@@ -366,7 +363,7 @@ function init() {
 function showConfirm(message, title = "Confirmación", acceptText = "Aceptar") {
   return new Promise((resolve) => {
     elements.confirmTitle.textContent = title;
-    elements.confirmMessage.textContent = message;
+    elements.confirmMessage.innerHTML = message; // CORRECCIÓN: innerHTML en vez de textContent
     elements.btnAcceptConfirmText.textContent = acceptText;
     elements.confirmModal.classList.add("active");
 
@@ -519,8 +516,7 @@ function showDashboard() {
     elements.statusSelect.value = "Pendiente";
   }
 
-  loadMappingData();
-  loadData();
+  syncDashboardData(false);
 }
 
 function logout() {
@@ -528,39 +524,80 @@ function logout() {
   location.reload();
 }
 
-// --- Mapping Logic ---
-async function loadMappingData() {
+// --- Data Operations (OPTIMIZADO) ---
+async function syncDashboardData(forceRefresh = false) {
+  const isReportsView =
+    elements.navReports && elements.navReports.classList.contains("active");
+  const targetGrid = isReportsView
+    ? elements.reportsView
+    : elements.recordsGrid;
+
+  // Animación UI
+  if (elements.btnRefresh) elements.btnRefresh.classList.add("is-loading");
+
+  // Loaders unificados
   const loadingHtml = `
+      <div class="loading-state" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 24px; background: var(--white); border-radius: var(--radius-md); border: 1px dashed var(--border); box-shadow: var(--shadow-sm);">
+          <div class="spinner" style="width: 48px; height: 48px; border-width: 4px; border-color: rgba(241, 90, 36, 0.1); border-top-color: var(--primary); margin-bottom: 24px;"></div>
+          <h3 style="color: var(--secondary); font-size: 20px; margin-bottom: 8px;">Sincronizando sistema</h3>
+          <p style="color: var(--text-muted); font-size: 15px;" class="loading-dots">Descargando registros y cursos de forma optimizada</p>
+      </div>
+  `;
+  targetGrid.innerHTML = loadingHtml;
+
+  const btnLoadingHtml = `
     <div style="padding: 16px; text-align: center; color: rgba(255,255,255,0.7); background: rgba(0,0,0,0.15); border-radius: 8px;">
       <div class="spinner" style="width: 20px; height: 20px; border-width: 2px; border-color: rgba(255,255,255,0.2); border-top-color: white; margin: 0 auto 10px;"></div>
-      <span style="font-size: 12px;" class="loading-dots">Cargando cursos</span>
-    </div>
-  `;
+      <span style="font-size: 12px;" class="loading-dots">Cargando</span>
+    </div>`;
 
-  if (state.user.role === "admin") {
-    elements.adminCourseButtonContainer.innerHTML = loadingHtml;
-  } else {
-    elements.courseButtonContainer.innerHTML = loadingHtml;
-  }
+  if (state.user.role === "admin")
+    elements.adminCourseButtonContainer.innerHTML = btnLoadingHtml;
+  else elements.courseButtonContainer.innerHTML = btnLoadingHtml;
 
   try {
-    const res = await callApi("getTeachersAndCourses");
-    if (res.success) {
-      state.teacherCourseMapping = res.mapping;
+    // 1 SOLA LLAMADA AL SERVIDOR en lugar de 3
+    const res = await callApi("getDashboardData", {
+      email: state.user.name,
+      role: state.user.role,
+      forceRefresh: forceRefresh,
+    });
 
-      if (state.user.role === "admin") {
-        populateAdminTeacherSelect(res.teachers);
-        populateAdminCourseSelect(); // SOLUCION: Esto limpia el loading inicial
+    if (res.success) {
+      // Asignar Data
+      state.records = res.records;
+      state.informes = res.informes;
+
+      // Asignar Mapping
+      if (res.mappingData.success) {
+        state.teacherCourseMapping = res.mappingData.mapping;
+        if (state.user.role === "admin") {
+          populateAdminTeacherSelect(res.mappingData.teachers);
+          populateAdminCourseSelect();
+        } else {
+          populateTeacherCourseSelectFromMapping();
+        }
+      }
+
+      // Renderizar Vista
+      if (isReportsView) {
+        renderReportsView();
       } else {
-        populateTeacherCourseSelectFromMapping();
+        renderActivityTags();
+        renderRecords();
+        updateStats();
       }
     }
   } catch (error) {
-    console.error("Error loading mapping data:", error);
-    const errorHtml = `<div style="color: #e74c3c; font-size: 12px; text-align: center;">Error al cargar cursos</div>`;
-    if (state.user.role === "admin")
-      elements.adminCourseButtonContainer.innerHTML = errorHtml;
-    else elements.courseButtonContainer.innerHTML = errorHtml;
+    showToast("Error al sincronizar datos", "danger");
+    targetGrid.innerHTML = `
+        <div class="loading-state" style="grid-column: 1 / -1; text-align: center; padding: 60px;">
+            <i class="ph ph-warning-circle" style="font-size: 48px; color: var(--danger); margin-bottom: 16px; display: block;"></i>
+            <p style="color: var(--danger);">Ocurrió un problema al cargar los datos. Revisa tu conexión.</p>
+        </div>
+    `;
+  } finally {
+    if (elements.btnRefresh) elements.btnRefresh.classList.remove("is-loading");
   }
 }
 
@@ -678,60 +715,6 @@ function updateCourseButtonsState() {
       btn.classList.remove("active");
     }
   });
-}
-
-// --- Data Operations ---
-async function loadData() {
-  const isReportsView = elements.navReports.classList.contains("active");
-  const targetGrid = isReportsView
-    ? elements.reportsView
-    : elements.recordsGrid;
-
-  // NUEVO: Animación en el botón
-  if (elements.btnRefresh) elements.btnRefresh.classList.add("is-loading");
-
-  // Diseño de carga más profesional y centrado
-  targetGrid.innerHTML = `
-        <div class="loading-state" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 24px; background: var(--white); border-radius: var(--radius-md); border: 1px dashed var(--border); box-shadow: var(--shadow-sm);">
-            <div class="spinner" style="width: 48px; height: 48px; border-width: 4px; border-color: rgba(241, 90, 36, 0.1); border-top-color: var(--primary); margin-bottom: 24px;"></div>
-            <h3 style="color: var(--secondary); font-size: 20px; margin-bottom: 8px;">Sincronizando con el servidor</h3>
-            <p style="color: var(--text-muted); font-size: 15px;" class="loading-dots">Obteniendo los últimos registros y actualizaciones</p>
-        </div>
-    `;
-
-  try {
-    const [records, informes] = await Promise.all([
-      callApi("getData", {
-        email: state.user.name,
-        role: state.user.role,
-      }),
-      callApi("getInformes", {
-        email: state.user.name,
-        role: state.user.role,
-      }),
-    ]);
-    state.records = records;
-    state.informes = informes;
-
-    if (isReportsView) {
-      renderReportsView();
-    } else {
-      renderActivityTags();
-      renderRecords();
-      updateStats();
-    }
-  } catch (error) {
-    showToast("Error al sincronizar datos", "danger");
-    targetGrid.innerHTML = `
-        <div class="loading-state" style="grid-column: 1 / -1; text-align: center; padding: 60px;">
-            <i class="ph ph-warning-circle" style="font-size: 48px; color: var(--danger); margin-bottom: 16px; display: block;"></i>
-            <p style="color: var(--danger);">Ocurrió un problema al cargar los datos.</p>
-        </div>
-    `;
-  } finally {
-    // NUEVO: Quitar animación
-    if (elements.btnRefresh) elements.btnRefresh.classList.remove("is-loading");
-  }
 }
 
 // --- Renderizar Tags de Actividad ---
@@ -895,11 +878,23 @@ function createCardElement(record) {
   if (estadoLabel === "Completado") bgBtnColor = "#2ecc71"; // Verde
   if (estadoLabel === "Enviado") bgBtnColor = "#3498db"; // Celeste
 
+  // CORRECCIÓN: Lógica estricta de visibilidad de checkboxes
   let checkboxHtml = "";
-  if (
-    state.user.role === "admin" ||
-    (state.user.role === "docente" && estadoLabel === "Completado")
-  ) {
+  let showCheckbox = false;
+
+  if (state.user.role === "admin") {
+    // Admin: Puede marcar como pendiente los "Sin revisar" o "Completado"
+    if (estadoLabel === "Sin revisar" || estadoLabel === "Completado") {
+      showCheckbox = true;
+    }
+  } else if (state.user.role === "docente") {
+    // Docente: Puede enviar reporte masivo de los "Completado"
+    if (estadoLabel === "Completado") {
+      showCheckbox = true;
+    }
+  }
+
+  if (showCheckbox) {
     checkboxHtml = `<input type="checkbox" class="select-card-checkbox" value="${record.id_registro}" onchange="updateBatchActionBar()">`;
   }
 
@@ -961,11 +956,21 @@ function createTableElement(filteredRecords) {
       if (estadoLabel === "Completado") bgBtnColor = "#2ecc71";
       if (estadoLabel === "Enviado") bgBtnColor = "#3498db";
 
+      // CORRECCIÓN: Lógica estricta de visibilidad de checkboxes en la tabla
       let checkboxHtml = "";
-      if (
-        state.user.role === "admin" ||
-        (state.user.role === "docente" && estadoLabel === "Completado")
-      ) {
+      let showCheckbox = false;
+
+      if (state.user.role === "admin") {
+        if (estadoLabel === "Sin revisar" || estadoLabel === "Completado") {
+          showCheckbox = true;
+        }
+      } else if (state.user.role === "docente") {
+        if (estadoLabel === "Completado") {
+          showCheckbox = true;
+        }
+      }
+
+      if (showCheckbox) {
         checkboxHtml = `<input type="checkbox" class="select-card-checkbox" value="${record.id_registro}" onchange="updateBatchActionBar()">`;
       }
 
@@ -1385,6 +1390,13 @@ async function saveStudentEdit(id) {
     return;
   }
 
+  // Validar DNI (8 dígitos numéricos)
+  const dniRegex = /^\d{8}$/;
+  if (!dniRegex.test(updateData.dni)) {
+    showToast("El DNI debe tener exactamente 8 números", "warning");
+    return;
+  }
+
   elements.btnSaveEdit.disabled = true;
   elements.btnSaveEdit.innerHTML = `
         <div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0;display:inline-block;vertical-align:middle;"></div>
@@ -1396,7 +1408,25 @@ async function saveStudentEdit(id) {
     if (res.success) {
       showToast("Registro actualizado correctamente", "success");
       elements.editStudentModal.classList.remove("active");
-      loadData();
+
+      // --- ACTUALIZACIÓN LOCAL (LIVE UPDATE UI) ---
+      const recordIndex = state.records.findIndex(
+        (r) => r.id_registro.toString() === id.toString(),
+      );
+
+      if (recordIndex !== -1) {
+        state.records[recordIndex].alumno = updateData.alumno;
+        state.records[recordIndex].dni = updateData.dni;
+        state.records[recordIndex].estado = updateData.estado;
+
+        if (state.user.role === "docente") {
+          state.records[recordIndex].nota = updateData.nota;
+          state.records[recordIndex].comentario = updateData.comentario;
+        }
+      }
+
+      renderRecords();
+      // --------------------------------------------
     } else {
       showToast(res.message, "danger");
     }
@@ -1464,9 +1494,28 @@ function updateBatchActionBar() {
   const spanSelectAll = document.getElementById("selectAllText");
   const isDashboardActive = elements.navDashboard.classList.contains("active");
 
-  if (allCheckboxes.length > 0 && isDashboardActive) {
+  // NUEVO: Lógica de visualización del botón "Seleccionar Todo"
+  let shouldShowSelectAll = false;
+  if (isDashboardActive && allCheckboxes.length > 0) {
+    if (state.user.role === "admin") {
+      // Admin: Solo muestra seleccionar todo si estamos viendo "Sin revisar" o "Completado" (para marcarlos como Pendientes)
+      if (
+        state.filters.status === "Sin revisar" ||
+        state.filters.status === "Completado"
+      ) {
+        shouldShowSelectAll = true;
+      }
+    } else {
+      // Docente: Solo muestra seleccionar todo si estamos viendo "Completado" (para enviarlos)
+      if (state.filters.status === "Completado") {
+        shouldShowSelectAll = true;
+      }
+    }
+  }
+
+  if (shouldShowSelectAll) {
     btnSelectAll.style.display = "flex";
-    if (count === allCheckboxes.length) {
+    if (count === allCheckboxes.length && count > 0) {
       spanSelectAll.textContent = "Deseleccionar Todo";
     } else {
       spanSelectAll.textContent = "Seleccionar Todo";
@@ -1519,7 +1568,19 @@ async function markSelectedAsPending() {
         "success",
       );
       elements.batchActionBar.style.display = "none";
-      loadData();
+
+      // --- ACTUALIZACIÓN LOCAL MASIVA ---
+      ids.forEach((id) => {
+        const index = state.records.findIndex(
+          (r) => r.id_registro.toString() === id.toString(),
+        );
+        if (index !== -1) {
+          state.records[index].estado = "Pendiente";
+        }
+      });
+
+      renderRecords();
+      // ----------------------------------
     } else {
       showToast(res.message, "danger");
     }
@@ -1555,7 +1616,23 @@ async function saveGrade(id) {
     if (res.success) {
       showToast("Calificación guardada con éxito", "success");
       closeModal();
-      loadData();
+
+      // --- ACTUALIZACIÓN LOCAL (LIVE UPDATE UI) ---
+      // 1. Buscar el registro exacto en la memoria
+      const recordIndex = state.records.findIndex(
+        (r) => r.id_registro.toString() === id.toString(),
+      );
+
+      if (recordIndex !== -1) {
+        // 2. Actualizar los datos localmente
+        state.records[recordIndex].nota = grade;
+        state.records[recordIndex].comentario = comment;
+        state.records[recordIndex].estado = "Completado"; // Pasa a completado automáticamente
+      }
+
+      // 3. Re-dibujar la interfaz (Cartas, Tablas, Gráficos y Estadísticas) usando la memoria
+      renderRecords();
+      // --------------------------------------------
     } else {
       showToast(res.message, "danger");
     }
@@ -1596,7 +1673,20 @@ async function sendTeacherReport() {
     if (res.success) {
       showToast(res.message, "success");
       elements.batchActionBar.style.display = "none";
-      loadData();
+
+      // --- ACTUALIZACIÓN LOCAL MASIVA ---
+      ids.forEach((id) => {
+        const index = state.records.findIndex(
+          (r) => r.id_registro.toString() === id.toString(),
+        );
+        if (index !== -1) {
+          state.records[index].estado = "Enviado";
+        }
+      });
+
+      // Desmarcar checkboxes virtuales y re-dibujar
+      renderRecords();
+      // ----------------------------------
     } else {
       showToast(res.message, "danger");
     }
@@ -1692,8 +1782,7 @@ function showDashboard() {
     elements.statusSelect.value = "Pendiente";
   }
 
-  loadMappingData();
-  loadData();
+  syncDashboardData(false);
 }
 
 function showUserManagementView() {
@@ -1718,6 +1807,8 @@ function showUserManagementView() {
   document.getElementById("btnSelectAll").style.display = "none";
   elements.batchActionBar.style.display = "none";
   elements.btnRemindTeacher.style.display = "none";
+  if (elements.activityFilterContainer)
+    elements.activityFilterContainer.style.display = "none";
 
   // Limpiar selecciones previas
   document
@@ -1754,7 +1845,18 @@ function showDashboardView() {
 
   if (state.user.role === "admin") {
     elements.adminFiltersSection.style.display = "block";
+    // RESTAURAR FILTROS VISUALMENTE
+    const courseGroup = document.getElementById("adminCourseFilterGroup");
+    const statusGroup = document.getElementById("adminStatusFilterGroup");
+    if (courseGroup) courseGroup.style.display = "block";
+    if (statusGroup) statusGroup.style.display = "block";
+
+    // Sincronizar UI con el estado actual
+    elements.adminStatusSelect.value = state.filters.status;
+    populateAdminCourseSelect();
+
     elements.btnRemindTeacher.style.display = "flex";
+    updateRemindButtonText();
   } else {
     if (elements.docenteSidebarSection)
       elements.docenteSidebarSection.style.display = "block";
@@ -2028,7 +2130,17 @@ async function enableReport(docente, curso) {
     const res = await callApi("initReport", { docente, curso });
     if (res.success) {
       showToast(res.message, "success");
-      loadData(); // Recarga toda la data para refrescar estados
+
+      // --- ACTUALIZACIÓN LOCAL (LIVE UPDATE UI) ---
+      state.informes.push({
+        id: new Date().getTime().toString(),
+        docente: docente,
+        curso: curso,
+        estado: "Pendiente",
+      });
+
+      renderReportsView();
+      // --------------------------------------------
     } else {
       showToast(res.message, "danger");
     }
@@ -2132,6 +2244,11 @@ function openReportModal(courseName, isEdit = false) {
 
   updateEvidenceButtonsUI();
 
+  // CORRECCIÓN: Limpiar SIEMPRE el canvas previo al abrir el modal
+  if (signaturePad) {
+    signaturePad.clear();
+  }
+
   // Reset o Recuperar Firma
   if (report && report.firma && report.firma !== "Sin firma") {
     state.signatureMode = "upload";
@@ -2152,7 +2269,6 @@ function openReportModal(courseName, isEdit = false) {
     state.uploadedSignature = null;
     setSignatureMode("draw");
     if (signaturePad) {
-      signaturePad.clear();
       setTimeout(() => signaturePad.resizeCanvas(), 100);
     }
   }
@@ -2177,7 +2293,7 @@ function setSignatureMode(mode) {
     elements.containerSignatureDraw.style.display = "none";
     elements.containerSignatureUpload.style.display = "flex";
     elements.signatureHelpText.textContent =
-      "Sube una imagen con fondo blanco o transparente.";
+      "Sube una imagen con fondo blanco o transparente. Haz clic en el campo para buscar tu imagen";
   }
 }
 
@@ -2434,8 +2550,48 @@ async function handleGenerateReportSubmit() {
       showToast("Informe generado exitosamente", "success");
       elements.reportModal.classList.remove("active");
 
-      // Actualizar datos locales para mostrar el nuevo botón
-      loadData();
+      // --- ACTUALIZACIÓN LOCAL (LIVE UPDATE UI COMPLETADO) ---
+      // Transformar arrays de evidencias a string con saltos de línea (como lo lee el sistema)
+      const parseEvidencias = (arr) =>
+        arr.length > 0 ? arr.join("\n") : "Sin evidencia";
+      const combinedSesiones = [
+        ...state.reportEvidences.sesion1,
+        ...state.reportEvidences.sesion2,
+      ];
+
+      const updateData = {
+        estado: "Completado",
+        url_informe: res.url,
+        dni: dni,
+        periodo_1: date1,
+        periodo_2: date2,
+        evidencias_informacion: parseEvidencias(
+          state.reportEvidences.informacion,
+        ),
+        evidencias_sesion: parseEvidencias(combinedSesiones),
+        evidencias_entrega: parseEvidencias(state.reportEvidences.entrega),
+        firma: firmaBase64,
+      };
+
+      const reportIndex = state.informes.findIndex(
+        (inf) =>
+          inf.curso &&
+          inf.curso.toString().trim().toLowerCase() === course.toLowerCase() &&
+          (inf.docente || "").toLowerCase() === state.user.name.toLowerCase(),
+      );
+
+      if (reportIndex !== -1) {
+        Object.assign(state.informes[reportIndex], updateData);
+      } else {
+        state.informes.push({
+          docente: state.user.name,
+          curso: course,
+          ...updateData,
+        });
+      }
+
+      renderReportsView();
+      // --------------------------------------------
 
       setTimeout(() => {
         elements.loadingOverlay.style.display = "none";
@@ -2548,8 +2704,31 @@ async function handleSaveUser() {
     if (res.success) {
       showToast(res.message, "success");
       elements.userModal.classList.remove("active");
-      await fetchUserList();
+
+      // --- ACTUALIZACIÓN LOCAL (LIVE UPDATE UI) ---
+      if (userData.oldName) {
+        // Modo Edición
+        const uIndex = state.userList.findIndex(
+          (u) => u.name === userData.oldName,
+        );
+        if (uIndex !== -1) {
+          state.userList[uIndex].name = userData.name;
+          state.userList[uIndex].password = userData.password;
+          state.userList[uIndex].role = userData.role;
+          state.userList[uIndex].correo = userData.correo;
+        }
+      } else {
+        // Modo Nuevo Usuario
+        state.userList.push({
+          name: userData.name,
+          password: userData.password,
+          role: userData.role,
+          correo: userData.correo,
+        });
+      }
+
       renderUserTable();
+      // --------------------------------------------
     } else {
       showToast(res.message, "danger");
     }
@@ -2572,8 +2751,11 @@ async function deleteUser(name) {
     const res = await callApi("deleteUser", { name });
     if (res.success) {
       showToast(res.message, "success");
-      await fetchUserList();
+
+      // --- ACTUALIZACIÓN LOCAL (LIVE UPDATE UI) ---
+      state.userList = state.userList.filter((u) => u.name !== name);
       renderUserTable();
+      // --------------------------------------------
     } else {
       showToast(res.message, "danger");
     }
@@ -2647,9 +2829,18 @@ async function sendUserCredentialsBatch() {
 
   if (names.length === 0) return;
 
-  const confirmed = await showConfirm(
-    `¿Estás seguro de enviar credenciales de acceso a ${names.length} usuario(s)?`,
-  );
+  // NUEVO: Construir lista de correos para el modal
+  const recipients = names.map((name) => {
+    const u = state.userList.find((user) => user.name === name);
+    return { name, email: u && u.correo ? u.correo : "Sin correo" };
+  });
+  const emailListHtml = recipients
+    .map((r) => `• ${r.name} <small>(${r.email})</small>`)
+    .join("<br>");
+
+  const msg = `¿Estás seguro de enviar credenciales de acceso a ${names.length} usuario(s)?<br><div style="text-align:left; font-size:15px; margin-top:10px; max-height:150px; overflow-y:auto; background:#f8f9fa; padding:10px; border-radius:8px;">${emailListHtml}</div>`;
+
+  const confirmed = await showConfirm(msg, "Enviar Credenciales", "Enviar");
   if (!confirmed) return;
 
   const originalHtml = elements.btnBatchAction.innerHTML;

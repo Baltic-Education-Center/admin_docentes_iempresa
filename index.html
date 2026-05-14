@@ -634,13 +634,28 @@
           <!-- Sección de Firma -->
           <div class="form-group" style="margin-top: 24px">
             <label>Firma del Docente</label>
-            
+
             <!-- Selector de modo de firma -->
-            <div class="signature-mode-toggle" style="display: flex; gap: 8px; margin-bottom: 12px;">
-              <button type="button" class="btn btn-outline active" id="btnModeDraw" onclick="setSignatureMode('draw')" style="flex: 1; padding: 8px; font-size: 12px; height: auto;">
+            <div
+              class="signature-mode-toggle"
+              style="display: flex; gap: 8px; margin-bottom: 12px"
+            >
+              <button
+                type="button"
+                class="btn btn-outline active"
+                id="btnModeDraw"
+                onclick="setSignatureMode('draw')"
+                style="flex: 1; padding: 8px; font-size: 12px; height: auto"
+              >
                 <i class="ph ph-pencil-line"></i> Dibujar
               </button>
-              <button type="button" class="btn btn-outline" id="btnModeUpload" onclick="setSignatureMode('upload')" style="flex: 1; padding: 8px; font-size: 12px; height: auto;">
+              <button
+                type="button"
+                class="btn btn-outline"
+                id="btnModeUpload"
+                onclick="setSignatureMode('upload')"
+                style="flex: 1; padding: 8px; font-size: 12px; height: auto"
+              >
                 <i class="ph ph-upload-simple"></i> Subir Imagen
               </button>
             </div>
@@ -709,15 +724,42 @@
               "
               onclick="document.getElementById('signatureFileInput').click()"
             >
-              <input type="file" id="signatureFileInput" accept="image/*" style="display: none;" onchange="handleSignatureFileUpload(event)">
-              <div id="signatureUploadPlaceholder" style="text-align: center; color: var(--text-muted);">
-                <i class="ph ph-image" style="font-size: 32px; color: var(--primary); margin-bottom: 8px;"></i>
-                <p style="font-size: 13px;">Haz clic o arrastra tu firma aquí</p>
+              <input
+                type="file"
+                id="signatureFileInput"
+                accept="image/*"
+                style="display: none"
+                onchange="handleSignatureFileUpload(event)"
+              />
+              <div
+                id="signatureUploadPlaceholder"
+                style="text-align: center; color: var(--text-muted)"
+              >
+                <i
+                  class="ph ph-image"
+                  style="
+                    font-size: 32px;
+                    color: var(--primary);
+                    margin-bottom: 8px;
+                  "
+                ></i>
+                <p style="font-size: 13px">Haz clic o arrastra tu firma aquí</p>
               </div>
-              <img id="signaturePreview" src="" style="display: none; max-width: 100%; max-height: 100%; object-fit: contain;">
+              <img
+                id="signaturePreview"
+                src=""
+                style="
+                  display: none;
+                  max-width: 100%;
+                  max-height: 100%;
+                  object-fit: contain;
+                "
+              />
             </div>
 
-            <small id="signatureHelpText" style="color: var(--text-muted); margin-top: 8px; display: block;"
+            <small
+              id="signatureHelpText"
+              style="color: var(--text-muted); margin-top: 8px; display: block"
               >Usa tu mouse o pantalla táctil para firmar.</small
             >
           </div>
@@ -942,7 +984,7 @@
     <div id="editStudentModal" class="modal">
       <div class="modal-content">
         <div class="modal-header">
-          <h2>Editar Datos del Alumno</h2>
+          <h2>Editar Datos del Registro</h2>
           <button class="btn-icon btn-close-modal">
             <i class="ph ph-x"></i>
           </button>
@@ -1152,7 +1194,9 @@
           style="font-size: 64px; color: #28a745; margin-bottom: 16px"
         ></i>
 
-        <h2 id="confirmTitle" style="margin-bottom: 12px">Informe Final Generado</h2>
+        <h2 id="confirmTitle" style="margin-bottom: 12px">
+          Informe Final Generado
+        </h2>
         <p
           id="confirmMessage"
           style="color: var(--text-muted); margin-bottom: 32px"
