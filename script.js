@@ -19,11 +19,14 @@ let state = {
   viewMode: "table",
   reportEvidences: {
     informacion: [],
-    sesion: [],
+    sesion1: [],
+    sesion2: [],
     entrega: [],
   },
   currentEvidenceCategory: null,
   informes: [], // Nueva lista de informes generados
+  signatureMode: "draw", // 'draw' o 'upload'
+  uploadedSignature: null, // Base64 de la imagen subida
 };
 
 let signaturePad = null;
@@ -74,6 +77,8 @@ const elements = {
   confirmMessage: document.getElementById("confirmMessage"),
   btnAcceptConfirm: document.getElementById("btnAcceptConfirm"),
   btnCancelConfirm: document.getElementById("btnCancelConfirm"),
+  confirmTitle: document.getElementById("confirmTitle"),
+  btnAcceptConfirmText: document.getElementById("btnAcceptConfirmText"),
   // New User Management Elements
   navDashboard: document.getElementById("navDashboard"),
   navUsers: document.getElementById("navUsers"),
@@ -117,10 +122,12 @@ const elements = {
   evidencePasteArea: document.getElementById("evidencePasteArea"),
   evidencePreviewGrid: document.getElementById("evidencePreviewGrid"),
   btnEvidenciaInformacion: document.getElementById("btnEvidenciaInformacion"),
-  btnEvidenciaSesion: document.getElementById("btnEvidenciaSesion"),
+  btnEvidenciaSesion1: document.getElementById("btnEvidenciaSesion1"),
+  btnEvidenciaSesion2: document.getElementById("btnEvidenciaSesion2"),
   btnEvidenciaEntrega: document.getElementById("btnEvidenciaEntrega"),
   badgeInformacion: document.getElementById("badge-informacion"),
-  badgeSesion: document.getElementById("badge-sesion"),
+  badgeSesion1: document.getElementById("badge-sesion1"),
+  badgeSesion2: document.getElementById("badge-sesion2"),
   badgeEntrega: document.getElementById("badge-entrega"),
   // Loading Overlay
   loadingOverlay: document.getElementById("loadingOverlay"),
@@ -128,6 +135,17 @@ const elements = {
   progressText: document.getElementById("progressText"),
   loadingTitle: document.getElementById("loadingTitle"),
   loadingSubtitle: document.getElementById("loadingSubtitle"),
+  // New Signature Elements
+  btnModeDraw: document.getElementById("btnModeDraw"),
+  btnModeUpload: document.getElementById("btnModeUpload"),
+  containerSignatureDraw: document.getElementById("containerSignatureDraw"),
+  containerSignatureUpload: document.getElementById("containerSignatureUpload"),
+  signatureFileInput: document.getElementById("signatureFileInput"),
+  signaturePreview: document.getElementById("signaturePreview"),
+  signatureUploadPlaceholder: document.getElementById(
+    "signatureUploadPlaceholder",
+  ),
+  signatureHelpText: document.getElementById("signatureHelpText"),
 };
 
 // --- Initialization ---
@@ -145,23 +163,72 @@ function init() {
   if (elements.evidenceFileInput) {
     elements.evidenceFileInput.addEventListener("change", function (e) {
       if (!state.currentEvidenceCategory) return;
-      const files = Array.from(e.target.files);
-      const remaining =
-        4 - state.reportEvidences[state.currentEvidenceCategory].length;
-
-      files.slice(0, remaining).forEach((file) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          state.reportEvidences[state.currentEvidenceCategory].push(
-            event.target.result,
-          );
-          renderEvidencePreviews();
-        };
-        reader.readAsDataURL(file);
-      });
-
-      // Limpiar input para permitir subir los mismos archivos si se borran
+      handleEvidenceFiles(e.target.files);
       e.target.value = "";
+    });
+  }
+
+  // Soporte Drag & Drop para Evidencias
+  if (elements.evidencePasteArea) {
+    ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
+      elements.evidencePasteArea.addEventListener(
+        eventName,
+        (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        },
+        false,
+      );
+    });
+
+    elements.evidencePasteArea.addEventListener("dragover", () => {
+      elements.evidencePasteArea.style.borderColor = "var(--primary)";
+      elements.evidencePasteArea.style.background = "var(--white)";
+    });
+
+    elements.evidencePasteArea.addEventListener("dragleave", () => {
+      elements.evidencePasteArea.style.borderColor = "var(--border)";
+      elements.evidencePasteArea.style.background = "var(--gray-light)";
+    });
+
+    elements.evidencePasteArea.addEventListener("drop", (e) => {
+      elements.evidencePasteArea.style.borderColor = "var(--border)";
+      elements.evidencePasteArea.style.background = "var(--gray-light)";
+      if (!state.currentEvidenceCategory) return;
+      handleEvidenceFiles(e.dataTransfer.files);
+    });
+  }
+
+  // Soporte Drag & Drop para Firma
+  if (elements.containerSignatureUpload) {
+    ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
+      elements.containerSignatureUpload.addEventListener(
+        eventName,
+        (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        },
+        false,
+      );
+    });
+
+    elements.containerSignatureUpload.addEventListener("dragover", () => {
+      elements.containerSignatureUpload.style.borderColor = "var(--primary)";
+      elements.containerSignatureUpload.style.background = "var(--white)";
+    });
+
+    elements.containerSignatureUpload.addEventListener("dragleave", () => {
+      elements.containerSignatureUpload.style.borderColor = "var(--border)";
+      elements.containerSignatureUpload.style.background = "var(--gray-light)";
+    });
+
+    elements.containerSignatureUpload.addEventListener("drop", (e) => {
+      elements.containerSignatureUpload.style.borderColor = "var(--border)";
+      elements.containerSignatureUpload.style.background = "var(--gray-light)";
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        processSignatureFile(files[0]);
+      }
     });
   }
 
@@ -187,14 +254,14 @@ function init() {
     console.error("Error al cargar usuarios:", err),
   );
 
-  // TIMEOUT EXACTO: 2 segundos (2000 ms)
+  // TIMEOUT EXACTO: 3.5 segundos (3500 ms)
   setTimeout(() => {
     if (splash) {
       splash.classList.add("hidden");
       // Se elimina permanentemente del DOM tras la transición para evitar el bug visual
       setTimeout(() => splash.remove(), 500);
     }
-  }, 3000);
+  }, 3500);
 
   // Eventos de Autenticación
   elements.loginForm.addEventListener("submit", handleLoginSubmit);
@@ -296,9 +363,11 @@ function init() {
 }
 
 // --- Custom Confirm Modal ---
-function showConfirm(message) {
+function showConfirm(message, title = "Confirmación", acceptText = "Aceptar") {
   return new Promise((resolve) => {
+    elements.confirmTitle.textContent = title;
     elements.confirmMessage.textContent = message;
+    elements.btnAcceptConfirmText.textContent = acceptText;
     elements.confirmModal.classList.add("active");
 
     const cleanup = () => {
@@ -618,6 +687,9 @@ async function loadData() {
     ? elements.reportsView
     : elements.recordsGrid;
 
+  // NUEVO: Animación en el botón
+  if (elements.btnRefresh) elements.btnRefresh.classList.add("is-loading");
+
   // Diseño de carga más profesional y centrado
   targetGrid.innerHTML = `
         <div class="loading-state" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 24px; background: var(--white); border-radius: var(--radius-md); border: 1px dashed var(--border); box-shadow: var(--shadow-sm);">
@@ -656,6 +728,9 @@ async function loadData() {
             <p style="color: var(--danger);">Ocurrió un problema al cargar los datos.</p>
         </div>
     `;
+  } finally {
+    // NUEVO: Quitar animación
+    if (elements.btnRefresh) elements.btnRefresh.classList.remove("is-loading");
   }
 }
 
@@ -1501,6 +1576,8 @@ async function sendTeacherReport() {
 
   const confirmed = await showConfirm(
     `¿Estás seguro de enviar el reporte por correo de ${ids.length} estudiante(s)? Los estudiantes pasarán a estado "Enviado".`,
+    "Enviar Reporte",
+    "Enviar Ahora",
   );
   if (!confirmed) return;
 
@@ -1739,52 +1816,58 @@ function renderReportsView() {
   if (state.user.role === "admin") {
     targetTeacher = state.filters.teacher;
     if (!targetTeacher) {
-      elements.reportsView.innerHTML = `
-        <div class="loading-state" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 24px; background: var(--white); border-radius: var(--radius-md); border: 1px dashed var(--border); box-shadow: var(--shadow-sm);">
-            <div style="width: 64px; height: 64px; background: rgba(10, 31, 68, 0.05); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
-                <i class="ph ph-users" style="font-size: 32px; color: var(--secondary);"></i>
-            </div>
-            <h3 style="color: var(--secondary); font-size: 20px; margin-bottom: 8px;">Selecciona un Docente</h3>
-            <p style="color: var(--text-muted); font-size: 15px;">Usa el filtro lateral para ver y habilitar los informes de un docente.</p>
-        </div>
-      `;
-      return;
+      // Para Admin "Todos los docentes": Obtiene todos los pares únicos de (curso, docente)
+      const pairsMap = new Map();
+      state.records.forEach((r) => {
+        const c = (r.curso || "").toString().trim();
+        const d = (r.docente || "").toString().trim();
+        if (c && d) {
+          pairsMap.set(d.toLowerCase() + "|||" + c.toLowerCase(), {
+            courseName: c,
+            teacherName: d,
+          });
+        }
+      });
+      sourceCourses = Array.from(pairsMap.values());
+    } else {
+      // Para Admin un solo docente
+      const pairsMap = new Map();
+      state.records.forEach((r) => {
+        const c = (r.curso || "").toString().trim();
+        const d = (r.docente || "").toString().trim();
+        if (c && d && d.toLowerCase() === targetTeacher.toLowerCase()) {
+          pairsMap.set(c.toLowerCase(), {
+            courseName: c,
+            teacherName: d,
+          });
+        }
+      });
+      sourceCourses = Array.from(pairsMap.values());
     }
-    // Para Admin: Obtiene TODOS los cursos que dicta el docente desde la data principal de registros
-    sourceCourses = [
-      ...new Set(
-        state.records
-          .filter(
-            (r) =>
-              (r.docente || "").toString().trim().toLowerCase() ===
-              targetTeacher.toLowerCase(),
-          )
-          .map((r) => r.curso),
-      ),
-    ];
   } else {
     targetTeacher = state.user.name;
     // Para Docente: SÓLO obtiene los cursos que ya han sido habilitados (existen en la hoja Informes)
-    sourceCourses = [
-      ...new Set(
-        state.informes
-          .filter(
-            (inf) =>
-              (inf.docente || "").toString().trim().toLowerCase() ===
-              targetTeacher.toLowerCase(),
-          )
-          .map((inf) => inf.curso),
-      ),
-    ];
+    const pairsMap = new Map();
+    state.informes.forEach((inf) => {
+      const c = (inf.curso || "").toString().trim();
+      const d = (inf.docente || "").toString().trim();
+      if (c && d && d.toLowerCase() === targetTeacher.toLowerCase()) {
+        pairsMap.set(c.toLowerCase(), {
+          courseName: c,
+          teacherName: targetTeacher,
+        });
+      }
+    });
+    sourceCourses = Array.from(pairsMap.values());
   }
 
   // 1. Obtener cursos únicos y asignarles ciclo
-  const coursesData = sourceCourses.map((course) => {
+  const coursesData = sourceCourses.map((item) => {
     let cicloNum = 99;
     let cicloText = "";
 
-    if (course.includes("-")) {
-      const parts = course.split("-");
+    if (item.courseName.includes("-")) {
+      const parts = item.courseName.split("-");
       if (parts.length > 1) {
         const firstChar = parts[1].trim().charAt(0);
         if (firstChar && !isNaN(firstChar)) {
@@ -1794,11 +1877,18 @@ function renderReportsView() {
         }
       }
     }
-    return { name: course, cicloNum, cicloText };
+    return {
+      name: item.courseName,
+      teacher: item.teacherName,
+      cicloNum,
+      cicloText,
+    };
   });
 
-  // 2. Ordenar por Ciclo y nombre
+  // 2. Ordenar por Docente, Ciclo y nombre
   coursesData.sort((a, b) => {
+    const teacherCompare = a.teacher.localeCompare(b.teacher);
+    if (teacherCompare !== 0) return teacherCompare;
     if (a.cicloNum !== b.cicloNum) return a.cicloNum - b.cicloNum;
     return a.name.localeCompare(b.name);
   });
@@ -1809,8 +1899,8 @@ function renderReportsView() {
           <div style="width: 64px; height: 64px; background: rgba(10, 31, 68, 0.05); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
               <i class="ph ph-folder-open" style="font-size: 32px; color: var(--secondary);"></i>
           </div>
-          <h3 style="color: var(--secondary); font-size: 20px; margin-bottom: 8px;">${state.user.role === "admin" ? "El docente no tiene cursos registrados" : "No tienes informes habilitados"}</h3>
-          <p style="color: var(--text-muted); font-size: 15px;">${state.user.role === "admin" ? "Este docente no posee entregas recibidas de cursos." : "El administrador aún no ha habilitado informes para tus cursos."}</p>
+          <h3 style="color: var(--secondary); font-size: 20px; margin-bottom: 8px;">${state.user.role === "admin" ? "No hay cursos registrados" : "No tienes informes habilitados"}</h3>
+          <p style="color: var(--text-muted); font-size: 15px;">${state.user.role === "admin" ? "No se encontraron entregas de cursos." : "El administrador aún no ha habilitado informes para tus cursos."}</p>
       </div>
     `;
     return;
@@ -1825,7 +1915,7 @@ function renderReportsView() {
         inf.curso &&
         inf.curso.toString().trim().toLowerCase() ===
           item.name.toLowerCase().trim() &&
-        inf.docente.toLowerCase() === targetTeacher.toLowerCase(),
+        (inf.docente || "").toLowerCase() === item.teacher.toLowerCase(),
     );
 
     const status = existingReport ? existingReport.estado : "No Habilitado";
@@ -1873,6 +1963,7 @@ function renderReportsView() {
         </div>
         <div class="card-body">
           <h3>${item.name}</h3>
+          ${!targetTeacher ? `<p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;"><i class="ph ph-user"></i> ${item.teacher}</p>` : ""}
         </div>
         <div class="card-footer">
     `;
@@ -1881,7 +1972,7 @@ function renderReportsView() {
     if (state.user.role === "admin") {
       if (status === "No Habilitado") {
         html += `
-          <button class="btn btn-primary btn-full" onclick="enableReport('${targetTeacher.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}')" style="height: 40px; font-size: 13px;">
+          <button class="btn btn-primary btn-full" onclick="enableReport('${item.teacher.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}')" style="height: 40px; font-size: 13px;">
             <i class="ph ph-check-circle"></i> Habilitar Informe
           </button>
         `;
@@ -1927,6 +2018,8 @@ function renderReportsView() {
 async function enableReport(docente, curso) {
   const confirmed = await showConfirm(
     `¿Habilitar el Informe Final para el curso "${curso}"?\n\nEl docente podrá verlo y generarlo desde su panel de control.`,
+    "Habilitar Informe",
+    "Habilitar Ahora",
   );
   if (!confirmed) return;
 
@@ -1968,10 +2061,16 @@ function openReportModal(courseName, isEdit = false) {
   if (elements.reportDate2Input) elements.reportDate2Input.value = "";
 
   // Reset evidences
-  state.reportEvidences = { informacion: [], sesion: [], entrega: [] };
+  state.reportEvidences = {
+    informacion: [],
+    sesion1: [],
+    sesion2: [],
+    entrega: [],
+  };
 
+  let report = null;
   if (isEdit) {
-    const report = state.informes.find(
+    report = state.informes.find(
       (inf) =>
         inf.curso &&
         inf.curso.toString().trim().toLowerCase() ===
@@ -2019,21 +2118,116 @@ function openReportModal(courseName, isEdit = false) {
       state.reportEvidences.informacion = splitEvidences(
         report.evidencias_informacion,
       );
-      state.reportEvidences.sesion = splitEvidences(report.evidencias_sesion);
+
+      // Lógica especial para sesiones: el primer enlace a Sesión 1, el segundo a Sesión 2
+      const sessionEvidences = splitEvidences(report.evidencias_sesion);
+      if (sessionEvidences.length > 0)
+        state.reportEvidences.sesion1 = [sessionEvidences[0]];
+      if (sessionEvidences.length > 1)
+        state.reportEvidences.sesion2 = [sessionEvidences[1]];
+
       state.reportEvidences.entrega = splitEvidences(report.evidencias_entrega);
     }
   }
 
   updateEvidenceButtonsUI();
 
-  // Reset Firma
-  if (signaturePad) {
-    signaturePad.clear();
-    setTimeout(() => signaturePad.resizeCanvas(), 100);
+  // Reset o Recuperar Firma
+  if (report && report.firma && report.firma !== "Sin firma") {
+    state.signatureMode = "upload";
+    state.uploadedSignature = report.firma;
+    setSignatureMode("upload");
+
+    // Previsualizar firma guardada
+    let finalFirmaUrl = report.firma;
+    if (finalFirmaUrl.includes("drive.google.com/file/d/")) {
+      const id = finalFirmaUrl.split("/d/")[1].split("/")[0];
+      finalFirmaUrl = `https://drive.google.com/thumbnail?id=${id}&sz=w800`;
+    }
+    elements.signaturePreview.src = finalFirmaUrl;
+    elements.signaturePreview.style.display = "block";
+    elements.signatureUploadPlaceholder.style.display = "none";
+  } else {
+    state.signatureMode = "draw";
+    state.uploadedSignature = null;
+    setSignatureMode("draw");
+    if (signaturePad) {
+      signaturePad.clear();
+      setTimeout(() => signaturePad.resizeCanvas(), 100);
+    }
   }
 
   elements.reportModal.classList.add("active");
   elements.btnGenerateReportSubmit.onclick = handleGenerateReportSubmit;
+}
+
+// --- Signature Helpers ---
+function setSignatureMode(mode) {
+  state.signatureMode = mode;
+  if (mode === "draw") {
+    elements.btnModeDraw.classList.add("active");
+    elements.btnModeUpload.classList.remove("active");
+    elements.containerSignatureDraw.style.display = "block";
+    elements.containerSignatureUpload.style.display = "none";
+    elements.signatureHelpText.textContent =
+      "Usa tu mouse o pantalla táctil para firmar.";
+  } else {
+    elements.btnModeDraw.classList.remove("active");
+    elements.btnModeUpload.classList.add("active");
+    elements.containerSignatureDraw.style.display = "none";
+    elements.containerSignatureUpload.style.display = "flex";
+    elements.signatureHelpText.textContent =
+      "Sube una imagen con fondo blanco o transparente.";
+  }
+}
+
+function handleSignatureFileUpload(event) {
+  const file = event.target.files[0];
+  if (file) {
+    processSignatureFile(file);
+  }
+}
+
+function processSignatureFile(file) {
+  if (!file.type.startsWith("image/")) {
+    showToast("Por favor selecciona una imagen válida", "danger");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    state.uploadedSignature = e.target.result;
+    elements.signaturePreview.src = e.target.result;
+    elements.signaturePreview.style.display = "block";
+    elements.signatureUploadPlaceholder.style.display = "none";
+  };
+  reader.readAsDataURL(file);
+}
+
+// --- Evidence Helpers ---
+function handleEvidenceFiles(filesList) {
+  if (!state.currentEvidenceCategory) return;
+  const files = Array.from(filesList);
+  const limit = state.currentEvidenceCategory.startsWith("sesion") ? 1 : 2;
+  const currentCount =
+    state.reportEvidences[state.currentEvidenceCategory].length;
+  const remaining = limit - currentCount;
+
+  if (remaining <= 0) {
+    showToast(`Máximo ${limit} imágenes para esta categoría`, "warning");
+    return;
+  }
+
+  files.slice(0, remaining).forEach((file) => {
+    if (!file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      state.reportEvidences[state.currentEvidenceCategory].push(
+        event.target.result,
+      );
+      renderEvidencePreviews();
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 // --- Image Paste Logic ---
@@ -2053,15 +2247,18 @@ function closeEvidenceModal() {
 }
 
 function updateEvidenceButtonsUI() {
-  const categories = ["informacion", "sesion", "entrega"];
+  const categories = ["informacion", "sesion1", "sesion2", "entrega"];
   categories.forEach((cat) => {
     const count = state.reportEvidences[cat].length;
+    // Determinar el límite según la categoría
+    const limit = cat.startsWith("sesion") ? 1 : 2;
+
     const badge =
       elements["badge" + cat.charAt(0).toUpperCase() + cat.slice(1)];
     const btn =
       elements["btnEvidencia" + cat.charAt(0).toUpperCase() + cat.slice(1)];
 
-    if (badge) badge.textContent = `${count}/4`;
+    if (badge) badge.textContent = `${count}/${limit}`;
     if (btn) {
       if (count > 0) {
         btn.classList.add("btn-success");
@@ -2111,8 +2308,11 @@ document.addEventListener("paste", function (e) {
   )
     return;
 
-  if (state.reportEvidences[state.currentEvidenceCategory].length >= 4) {
-    showToast("Máximo 4 imágenes por categoría", "warning");
+  // Determinar el límite según la categoría
+  const limit = state.currentEvidenceCategory.startsWith("sesion") ? 1 : 2;
+
+  if (state.reportEvidences[state.currentEvidenceCategory].length >= limit) {
+    showToast(`Máximo ${limit} imágenes para esta categoría`, "warning");
     return;
   }
 
@@ -2150,7 +2350,7 @@ async function handleGenerateReportSubmit() {
   const date2 = elements.reportDate2Input.value;
 
   if (!dni || !date1 || !date2) {
-    showToast("Por favor, completa los campos de DNI y Periodo", "warning");
+    showToast("Por favor, completa los campos de DNI o Periodo", "warning");
     return;
   }
 
@@ -2164,20 +2364,31 @@ async function handleGenerateReportSubmit() {
   // Validate evidences
   if (
     state.reportEvidences.informacion.length === 0 ||
-    state.reportEvidences.sesion.length === 0 ||
+    state.reportEvidences.sesion1.length === 0 ||
+    state.reportEvidences.sesion2.length === 0 ||
     state.reportEvidences.entrega.length === 0
   ) {
     showToast(
-      "Debes añadir al menos 1 imagen por cada tipo de evidencia",
+      "Debes añadir al menos 1 imagen por cada tipo de evidencia (Info, Sesión 1, Sesión 2 y Entrega)",
       "warning",
     );
     return;
   }
 
   // Validar firma
-  if (signaturePad && signaturePad.isEmpty()) {
-    showToast("Por favor, ingresa tu firma", "warning");
-    return;
+  let firmaBase64 = null;
+  if (state.signatureMode === "draw") {
+    if (signaturePad && signaturePad.isEmpty()) {
+      showToast("Por favor, ingresa tu firma", "warning");
+      return;
+    }
+    firmaBase64 = signaturePad.toDataURL();
+  } else {
+    if (!state.uploadedSignature) {
+      showToast("Por favor, sube una imagen de tu firma", "warning");
+      return;
+    }
+    firmaBase64 = state.uploadedSignature;
   }
 
   // Mostrar Loading Overlay Fullscreen
@@ -2200,8 +2411,6 @@ async function handleGenerateReportSubmit() {
   }, 400);
 
   try {
-    const firmaBase64 = signaturePad ? signaturePad.toDataURL() : null;
-
     const res = await callApi("generateReport", {
       docente: state.user.name,
       curso: course,
@@ -2209,7 +2418,8 @@ async function handleGenerateReportSubmit() {
       fecha1: date1,
       fecha2: date2,
       evidencias_informacion: state.reportEvidences.informacion,
-      evidencias_sesion: state.reportEvidences.sesion,
+      evidencias_sesion1: state.reportEvidences.sesion1,
+      evidencias_sesion2: state.reportEvidences.sesion2,
       evidencias_entrega: state.reportEvidences.entrega,
       firma: firmaBase64,
     });
@@ -2231,6 +2441,8 @@ async function handleGenerateReportSubmit() {
         elements.loadingOverlay.style.display = "none";
         showConfirm(
           `¡El informe para ${course} se ha generado correctamente! ¿Deseas abrirlo ahora?`,
+          "Informe Final Generado",
+          "ABRIR INFORME FINAL",
         ).then((confirmed) => {
           if (confirmed) {
             const viewerUrl = res.url.replace(
@@ -2610,9 +2822,8 @@ async function handleSyncUsers() {
   if (!confirmed) return;
 
   const btn = elements.btnSyncUsers;
-  const originalHtml = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = `<div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0;display:inline-block;vertical-align:middle; border-top-color: var(--primary);"></div> <span style="margin-left:8px;" class="loading-dots">Sincronizando</span>`;
+  btn.classList.add("is-loading");
 
   try {
     const res = await callApi("syncUsers");
@@ -2627,7 +2838,7 @@ async function handleSyncUsers() {
     showToast("Error al sincronizar usuarios", "danger");
   } finally {
     btn.disabled = false;
-    btn.innerHTML = originalHtml;
+    btn.classList.remove("is-loading");
   }
 }
 

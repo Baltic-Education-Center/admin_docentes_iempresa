@@ -1387,3 +1387,74 @@ body.role-admin .nav-link.admin-only {
   background: #f4f4f4;
   color: #7f8c8d;
 }
+
+/* --- Eye-Catching Sync Buttons --- */
+.btn-refresh-striking {
+  background: linear-gradient(135deg, var(--primary) 0%, #ff7e5f 100%) !important;
+  color: white !important;
+  border: none !important;
+  box-shadow: 0 4px 15px rgba(241, 90, 36, 0.4) !important;
+  position: relative;
+  overflow: visible !important; /* Allow the pulse ring to be visible */
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+  z-index: 1;
+}
+
+.btn-refresh-striking:hover {
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 8px 25px rgba(241, 90, 36, 0.5) !important;
+  background: linear-gradient(135deg, var(--primary-hover) 0%, #feb47b 100%) !important;
+}
+
+.btn-refresh-striking:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+.btn-refresh-striking i {
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-block;
+}
+
+.btn-refresh-striking:hover i {
+  transform: rotate(360deg);
+}
+
+/* Pulsing effect for attention */
+.btn-refresh-striking::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 0 rgba(241, 90, 36, 0.7);
+  animation: pulse-ring 2s infinite;
+  z-index: -1;
+  pointer-events: none;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(241, 90, 36, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(241, 90, 36, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(241, 90, 36, 0);
+  }
+}
+
+.btn-refresh-striking.is-loading i {
+  animation: spin-sync 1s linear infinite;
+}
+
+@keyframes spin-sync {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

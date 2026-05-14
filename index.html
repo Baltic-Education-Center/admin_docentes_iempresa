@@ -279,7 +279,7 @@
             </button>
 
             <button
-              class="btn btn-icon"
+              class="btn btn-icon btn-refresh-striking"
               id="btnRefresh"
               title="Sincronizar Datos"
             >
@@ -372,7 +372,7 @@
               </div>
               <div style="display: flex; gap: 12px">
                 <button
-                  class="btn btn-outline"
+                  class="btn btn-outline btn-refresh-striking"
                   id="btnSyncUsers"
                   title="Sincronizar docentes desde Parafelix"
                 >
@@ -468,7 +468,7 @@
           </div>
 
           <div class="form-group">
-            <label>Periodo de Trabajo</label>
+            <label>Periodos de Trabajo</label>
             <div
               style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px"
             >
@@ -498,7 +498,9 @@
           </div>
 
           <div class="form-group">
-            <label>Evidencias (Máx 4 imágenes por categoría)</label>
+            <label
+              >Evidencias (Máx 2 imágenes por categoría / 1 por sesión)</label
+            >
             <div
               style="
                 display: flex;
@@ -512,13 +514,19 @@
                 class="btn btn-outline btn-evidence"
                 id="btnEvidenciaInformacion"
                 onclick="
-                  openEvidenceModal('informacion', 'Evidencias de Información')
+                  openEvidenceModal(
+                    'informacion',
+                    'Evidencias de Información registrada/Material utilizado',
+                  )
                 "
                 style="justify-content: space-between"
               >
                 <div style="display: flex; align-items: center; gap: 8px">
                   <i class="ph ph-image"></i>
-                  <span>Evidencias de Información</span>
+                  <span
+                    >Evidencias de Información registrada/Material
+                    utilizado</span
+                  >
                 </div>
                 <span
                   class="evidence-badge"
@@ -530,23 +538,28 @@
                     font-size: 12px;
                     font-weight: 700;
                   "
-                  >0/4</span
+                  >0/2</span
                 >
               </button>
               <button
                 type="button"
                 class="btn btn-outline btn-evidence"
-                id="btnEvidenciaSesion"
-                onclick="openEvidenceModal('sesion', 'Evidencias de Sesión')"
+                id="btnEvidenciaSesion1"
+                onclick="
+                  openEvidenceModal(
+                    'sesion1',
+                    'Evidencias de Sesiones realizadas: Sesión 1',
+                  )
+                "
                 style="justify-content: space-between"
               >
                 <div style="display: flex; align-items: center; gap: 8px">
                   <i class="ph ph-image"></i>
-                  <span>Evidencias de Sesión</span>
+                  <span>Evidencias de Sesiones realizadas: Sesión 1</span>
                 </div>
                 <span
                   class="evidence-badge"
-                  id="badge-sesion"
+                  id="badge-sesion1"
                   style="
                     background: var(--gray-light);
                     padding: 2px 8px;
@@ -554,19 +567,53 @@
                     font-size: 12px;
                     font-weight: 700;
                   "
-                  >0/4</span
+                  >0/1</span
+                >
+              </button>
+              <button
+                type="button"
+                class="btn btn-outline btn-evidence"
+                id="btnEvidenciaSesion2"
+                onclick="
+                  openEvidenceModal(
+                    'sesion2',
+                    'Evidencias de Sesiones realizadas: Sesión 2',
+                  )
+                "
+                style="justify-content: space-between"
+              >
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <i class="ph ph-image"></i>
+                  <span>Evidencias de Sesiones realizadas: Sesión 2</span>
+                </div>
+                <span
+                  class="evidence-badge"
+                  id="badge-sesion2"
+                  style="
+                    background: var(--gray-light);
+                    padding: 2px 8px;
+                    border-radius: 12px;
+                    font-size: 12px;
+                    font-weight: 700;
+                  "
+                  >0/1</span
                 >
               </button>
               <button
                 type="button"
                 class="btn btn-outline btn-evidence"
                 id="btnEvidenciaEntrega"
-                onclick="openEvidenceModal('entrega', 'Evidencias de Entrega')"
+                onclick="
+                  openEvidenceModal(
+                    'entrega',
+                    'Evidencias de Entrega del reporte de notas',
+                  )
+                "
                 style="justify-content: space-between"
               >
                 <div style="display: flex; align-items: center; gap: 8px">
                   <i class="ph ph-image"></i>
-                  <span>Evidencias de Entrega</span>
+                  <span>Evidencias de Entrega del reporte de notas</span>
                 </div>
                 <span
                   class="evidence-badge"
@@ -578,7 +625,7 @@
                     font-size: 12px;
                     font-weight: 700;
                   "
-                  >0/4</span
+                  >0/2</span
                 >
               </button>
             </div>
@@ -586,8 +633,21 @@
 
           <!-- Sección de Firma -->
           <div class="form-group" style="margin-top: 24px">
-            <label>Firma del Docente (Obligatorio)</label>
+            <label>Firma del Docente</label>
+            
+            <!-- Selector de modo de firma -->
+            <div class="signature-mode-toggle" style="display: flex; gap: 8px; margin-bottom: 12px;">
+              <button type="button" class="btn btn-outline active" id="btnModeDraw" onclick="setSignatureMode('draw')" style="flex: 1; padding: 8px; font-size: 12px; height: auto;">
+                <i class="ph ph-pencil-line"></i> Dibujar
+              </button>
+              <button type="button" class="btn btn-outline" id="btnModeUpload" onclick="setSignatureMode('upload')" style="flex: 1; padding: 8px; font-size: 12px; height: auto;">
+                <i class="ph ph-upload-simple"></i> Subir Imagen
+              </button>
+            </div>
+
+            <!-- Contenedor Dibujar (Canvas) -->
             <div
+              id="containerSignatureDraw"
               class="signature-wrapper"
               style="
                 border: 2px solid var(--border);
@@ -628,7 +688,36 @@
                 <i class="ph ph-eraser"></i> Limpiar
               </button>
             </div>
-            <small style="color: var(--text-muted)"
+
+            <!-- Contenedor Subir (Upload Area) -->
+            <div
+              id="containerSignatureUpload"
+              class="signature-wrapper"
+              style="
+                border: 2px dashed var(--border);
+                border-radius: var(--radius-sm);
+                background: var(--gray-light);
+                position: relative;
+                overflow: hidden;
+                height: 160px;
+                display: none;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: var(--transition);
+              "
+              onclick="document.getElementById('signatureFileInput').click()"
+            >
+              <input type="file" id="signatureFileInput" accept="image/*" style="display: none;" onchange="handleSignatureFileUpload(event)">
+              <div id="signatureUploadPlaceholder" style="text-align: center; color: var(--text-muted);">
+                <i class="ph ph-image" style="font-size: 32px; color: var(--primary); margin-bottom: 8px;"></i>
+                <p style="font-size: 13px;">Haz clic o arrastra tu firma aquí</p>
+              </div>
+              <img id="signaturePreview" src="" style="display: none; max-width: 100%; max-height: 100%; object-fit: contain;">
+            </div>
+
+            <small id="signatureHelpText" style="color: var(--text-muted); margin-top: 8px; display: block;"
               >Usa tu mouse o pantalla táctil para firmar.</small
             >
           </div>
@@ -702,11 +791,12 @@
                 margin-bottom: 8px;
               "
             >
-              Presiona <strong>Ctrl + V</strong> para pegar o
-              <strong>haz clic aquí</strong> para subir imágenes.
+              Presiona <strong>Ctrl + V</strong> para pegar,
+              <strong>arrastra archivos</strong> o
+              <strong>haz clic aquí</strong> para subir.
             </p>
             <small style="color: var(--text-muted)"
-              >Máximo 4 imágenes por categoría.</small
+              >Máximo 2 imágenes por categoría / 1 por sesión.</small
             >
           </div>
 
@@ -1062,7 +1152,7 @@
           style="font-size: 64px; color: #28a745; margin-bottom: 16px"
         ></i>
 
-        <h2 style="margin-bottom: 12px">Informe Final Generado</h2>
+        <h2 id="confirmTitle" style="margin-bottom: 12px">Informe Final Generado</h2>
         <p
           id="confirmMessage"
           style="color: var(--text-muted); margin-bottom: 32px"
@@ -1074,7 +1164,7 @@
             Cerrar
           </button>
           <button class="btn btn-primary btn-full" id="btnAcceptConfirm">
-            ABRIR INFORME FINAL
+            <span id="btnAcceptConfirmText">ABRIR INFORME FINAL</span>
           </button>
         </div>
       </div>
