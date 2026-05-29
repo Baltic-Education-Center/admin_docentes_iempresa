@@ -161,24 +161,29 @@ class SimpleSignaturePad {
     this.ctx = this.canvas.getContext("2d");
     this.isDrawing = false;
     this.hasSignature = false;
+    this.points = []; // Para almacenar los puntos y suavizar la curva
 
-    // Configuración inicial de trazo
-    this.refreshCtxSettings();
     this.setupListeners();
   }
 
   refreshCtxSettings() {
-    this.ctx.lineWidth = 2.5;
+    this.ctx.lineWidth = 1.5; // Un poco más grueso ayuda a la nitidez
     this.ctx.lineCap = "round";
     this.ctx.lineJoin = "round";
-    this.ctx.strokeStyle = "#0A1F44"; // Color Azul IEmpresa
+    this.ctx.strokeStyle = "#0A1F44";
+
+    // Antialiasing forzado por navegador (esto ayuda un poco)
+    this.ctx.imageSmoothingEnabled = true;
+    this.ctx.imageSmoothingQuality = "high";
   }
 
   setupListeners() {
     const startDrawing = (e) => {
       this.isDrawing = true;
       this.hasSignature = true;
+      this.points = []; // Reiniciar puntos
       const pos = this.getPos(e);
+      this.points.push(pos);
       this.ctx.beginPath();
       this.ctx.moveTo(pos.x, pos.y);
       e.preventDefault();
@@ -187,24 +192,40 @@ class SimpleSignaturePad {
     const draw = (e) => {
       if (!this.isDrawing) return;
       const pos = this.getPos(e);
-      this.ctx.lineTo(pos.x, pos.y);
-      this.ctx.stroke();
+      this.points.push(pos);
+
+      if (this.points.length > 2) {
+        // Lógica de suavizado: Calculamos el punto medio entre los dos últimos puntos
+        // para crear una curva Bézier cuadrática
+        const lastTwoPoints = this.points.slice(-2);
+        const controlPoint = lastTwoPoints[0];
+        const endPoint = {
+          x: (controlPoint.x + pos.x) / 2,
+          y: (controlPoint.y + pos.y) / 2,
+        };
+
+        this.ctx.quadraticCurveTo(
+          controlPoint.x,
+          controlPoint.y,
+          endPoint.x,
+          endPoint.y,
+        );
+        this.ctx.stroke();
+      }
       e.preventDefault();
     };
 
     const stopDrawing = () => {
       if (this.isDrawing) {
-        this.ctx.closePath();
         this.isDrawing = false;
+        this.points = [];
       }
     };
 
-    // Mouse
     this.canvas.addEventListener("mousedown", startDrawing);
     this.canvas.addEventListener("mousemove", draw);
     window.addEventListener("mouseup", stopDrawing);
 
-    // Touch (Móviles/Tablets)
     this.canvas.addEventListener("touchstart", startDrawing, {
       passive: false,
     });
@@ -215,7 +236,6 @@ class SimpleSignaturePad {
   getPos(e) {
     const rect = this.canvas.getBoundingClientRect();
     let clientX, clientY;
-
     if (e.touches && e.touches.length > 0) {
       clientX = e.touches[0].clientX;
       clientY = e.touches[0].clientY;
@@ -223,8 +243,6 @@ class SimpleSignaturePad {
       clientX = e.clientX;
       clientY = e.clientY;
     }
-
-    // Retornar posición relativa al canvas (CSS pixels)
     return {
       x: clientX - rect.left,
       y: clientY - rect.top,
@@ -233,34 +251,30 @@ class SimpleSignaturePad {
 
   resizeCanvas() {
     const rect = this.canvas.parentElement.getBoundingClientRect();
-    const ratio = Math.max(window.devicePixelRatio || 1, 1);
 
-    // Si el contenedor no tiene tamaño aún, usar un fallback para evitar 0px
+    // --- SUPER-SAMPLING ---
+    // Forzamos una resolución de x4 para que los pixeles sean invisibles
+    // Independientemente de si la pantalla es Retina o no.
+    const qualityMultiplier = 4;
+
     const width = rect.width || 460;
-    const height = rect.height || 160;
+    const height = rect.height || 250;
 
-    // Ajustar resolución interna
-    this.canvas.width = width * ratio;
-    this.canvas.height = height * ratio;
+    // Resolución interna (Muchos más pixeles para nitidez extrema)
+    this.canvas.width = width * qualityMultiplier;
+    this.canvas.height = height * qualityMultiplier;
 
-    // Ajustar tamaño visual
+    // Tamaño visual (Se mantiene igual en el modal)
     this.canvas.style.width = width + "px";
     this.canvas.style.height = height + "px";
 
-    // Escalar contexto y restaurar estilos (se pierden al cambiar width/height)
-    this.ctx.scale(ratio, ratio);
+    // Escalar el contexto para que el dibujo coincida con el tamaño visual
+    this.ctx.scale(qualityMultiplier, qualityMultiplier);
     this.refreshCtxSettings();
   }
 
   clear() {
-    // Limpiar considerando el escalado
-    const ratio = Math.max(window.devicePixelRatio || 1, 1);
-    this.ctx.clearRect(
-      0,
-      0,
-      this.canvas.width / ratio,
-      this.canvas.height / ratio,
-    );
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.hasSignature = false;
   }
 
@@ -269,6 +283,8 @@ class SimpleSignaturePad {
   }
 
   toDataURL() {
+    // Al exportar, la imagen será de alta resolución,
+    // pero el backend de Google Docs la ajustará a los 300px definidos.
     return this.canvas.toDataURL("image/png");
   }
 }
