@@ -2151,6 +2151,8 @@ async function handleSendReminders() {
   );
 
   let recipients = [];
+  let teacherPendingCount = 0; // NUEVO: Para almacenar la cantidad del docente
+
   if (targetTeacher) {
     const user = state.userList.find(
       (u) => u.name.toLowerCase() === targetTeacher.toLowerCase(),
@@ -2158,6 +2160,10 @@ async function handleSendReminders() {
     if (user && user.correo) {
       recipients.push({ name: targetTeacher, email: user.correo });
     }
+    // Calcular cantidad de pendientes del docente seleccionado
+    teacherPendingCount = pendingRecords.filter(
+      (r) => (r.docente || "").toLowerCase() === targetTeacher.toLowerCase(),
+    ).length;
   } else {
     const teacherNames = [...new Set(pendingRecords.map((r) => r.docente))];
     recipients = teacherNames
@@ -2175,31 +2181,20 @@ async function handleSendReminders() {
     return;
   }
 
-  // 2. Construir mensaje de confirmación con lista de correos
+  // 2. Construir mensaje de confirmación con lista de correos y cantidad
   const emailListHtml = recipients
     .map((r) => `<br>• ${r.name} (${r.email})`)
     .join("");
 
+  // MODIFICADO: Mensaje diferenciado y detallado
   const msg = targetTeacher
-    ? `¿Enviar recordatorio al docente "${targetTeacher}"? <br><small>${recipients[0].email}</small>`
+    ? `¿Enviar recordatorio al docente "${targetTeacher}"?<br>Tiene <strong style="color:var(--primary); font-size:16px;">${teacherPendingCount}</strong> registro(s) pendiente(s).<br><small>${recipients[0].email}</small>`
     : `¿Enviar recordatorios a los siguientes docentes?<br><div style="text-align:left; font-size:13px; margin-top:10px; max-height:150px; overflow-y:auto; background:#f8f9fa; padding:10px; border-radius:8px;">${emailListHtml}</div>`;
 
-  // Usamos un modal más grande o inyectamos el HTML en el mensaje
-  elements.confirmMessage.innerHTML = msg;
-  elements.confirmModal.classList.add("active");
-
-  const confirmed = await new Promise((resolve) => {
-    const onAccept = () => {
-      elements.confirmModal.classList.remove("active");
-      resolve(true);
-    };
-    const onCancel = () => {
-      elements.confirmModal.classList.remove("active");
-      resolve(false);
-    };
-    elements.btnAcceptConfirm.onclick = onAccept;
-    elements.btnCancelConfirm.onclick = onCancel;
-  });
+  const modalTitle = targetTeacher
+    ? "Enviar Recordatorio"
+    : "Enviar Recordatorios";
+  const confirmed = await showConfirm(msg, modalTitle, "Enviar Notificación");
 
   if (!confirmed) return;
 
@@ -2222,7 +2217,6 @@ async function handleSendReminders() {
   } finally {
     elements.btnRemindTeacher.disabled = false;
     elements.btnRemindTeacher.innerHTML = originalHtml;
-    // Forzamos la actualización del texto después de restaurar el HTML
     updateRemindButtonText();
   }
 }
@@ -2920,9 +2914,19 @@ function populateAdminCourseSelect() {
     elements.adminCourseButtonContainer.appendChild(btnAll);
 
     state.teacherCourseMapping[teacher].forEach((course) => {
+      // NUEVO: Verificar si el curso tiene registros actualmente
+      const hasRecords = state.records.some(
+        (r) => r.curso === course && r.docente === teacher,
+      );
+      const opacityStyle = hasRecords
+        ? ""
+        : "opacity: 0.6; filter: grayscale(1);";
+      const iconClass = hasRecords ? "ph-book-bookmark" : "ph-folder";
+
       const btn = document.createElement("button");
       btn.className = `course-btn ${state.filters.course === course ? "active" : ""}`;
-      btn.innerHTML = `<i class="ph ph-book-bookmark"></i> ${course}`;
+      btn.innerHTML = `<i class="ph ${iconClass}"></i> ${course}`;
+      btn.style.cssText = opacityStyle; // Estilo minimalista si está vacío
       btn.onclick = () => {
         state.filters.course = course;
         updateAdminCourseButtonsState();
@@ -2934,7 +2938,7 @@ function populateAdminCourseSelect() {
     const msg = document.createElement("div");
     msg.style.color = "rgba(255,255,255,0.6)";
     msg.style.fontSize = "13px";
-    msg.style.marginBottom = "32px"; // SOLUCION: Espaciado inferior agregado
+    msg.style.marginBottom = "32px";
     msg.textContent = "Selecciona un docente para ver sus cursos.";
     elements.adminCourseButtonContainer.appendChild(msg);
   }
@@ -2975,9 +2979,19 @@ function populateTeacherCourseSelectFromMapping() {
 
   if (state.teacherCourseMapping[teacherName]) {
     state.teacherCourseMapping[teacherName].forEach((course) => {
+      // NUEVO: Verificar si el curso tiene registros asignados a este docente
+      const hasRecords = state.records.some(
+        (r) => r.curso === course && r.docente === teacherName,
+      );
+      const opacityStyle = hasRecords
+        ? ""
+        : "opacity: 0.6; filter: grayscale(1);";
+      const iconClass = hasRecords ? "ph-book-bookmark" : "ph-folder";
+
       const btn = document.createElement("button");
       btn.className = `course-btn ${state.filters.course === course ? "active" : ""}`;
-      btn.innerHTML = `<i class="ph ph-book-bookmark"></i> ${course}`;
+      btn.innerHTML = `<i class="ph ${iconClass}"></i> ${course}`;
+      btn.style.cssText = opacityStyle; // Estilo minimalista si está vacío
       btn.onclick = () => {
         state.filters.course = course;
         updateCourseButtonsState();
