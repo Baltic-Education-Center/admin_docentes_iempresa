@@ -1586,7 +1586,7 @@ function updateRemindButtonText() {
   const span = document.getElementById("remindTeacherText");
   if (!span) return;
   if (state.filters.teacher === "") {
-    span.textContent = "Notificar a Todos";
+    span.textContent = "Notificar a TODOS";
   } else {
     span.textContent = "Notificar Docente";
   }
