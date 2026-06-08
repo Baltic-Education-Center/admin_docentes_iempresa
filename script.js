@@ -2,7 +2,7 @@
 // 1. Configuration and Global State
 // ==========================================
 const WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbwV4FutdAhabjcT2wGZSNc-eaxYIE1hQ2SBjfF8V27IJcS5J-oBHqr_-SZwIrf8yeiouw/exec";
+  "https://script.google.com/macros/s/AKfycbwJhXZI7WtD06lSryKqhxOJA6gc-HE6kfc1z60xMp4kO4sk7AHWpuGZFCjFRL51Pm1b/exec";
 
 // --- State Management ---
 let state = {
