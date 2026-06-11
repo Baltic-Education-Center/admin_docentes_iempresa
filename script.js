@@ -1027,10 +1027,16 @@ function renderReportsView() {
               </button>
             `;
           } else if (status === "Pendiente") {
+            // MODIFICADO: Se agrega el botón de Cancelar junto al de Esperando al Docente
             html += `
-              <button class="btn btn-outline btn-full" disabled style="height: 40px; font-size: 13px; opacity: 0.7; cursor: not-allowed; border-style: dashed;">
-                <i class="ph ph-hourglass-high"></i> Esperando al Docente
-              </button>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn btn-outline btn-full" disabled style="height: 40px; font-size: 13px; opacity: 0.7; cursor: not-allowed; border-style: dashed;">
+                  <i class="ph ph-hourglass-high"></i> Esperando al Docente
+                </button>
+                <button class="btn btn-icon" onclick="cancelReport('${item.teacher.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}')" style="width: 40px; height: 40px; font-size: 18px; border-color: var(--danger); color: var(--danger); flex-shrink: 0;" title="Cancelar Habilitación">
+                  <i class="ph ph-x"></i>
+                </button>
+              </div>
             `;
           } else {
             html += `
@@ -1314,6 +1320,7 @@ function updateChart(records) {
   };
 
   let labels = [];
+  let originalLabels = []; // NUEVO: Almacena las etiquetas completas para el tooltip
   let datasets = [];
 
   const role = state.user.role;
@@ -1326,7 +1333,10 @@ function updateChart(records) {
       const teachers = [
         ...new Set(records.map((r) => r.docente || "Desconocido")),
       ].sort();
-      labels = teachers;
+
+      originalLabels = teachers; // Guardar nombres completos para tooltip
+      labels = teachers.map(abbreviateTeacherName); // Aplicar abreviatura para el eje X
+
       datasets = states.map((st) => ({
         label: st,
         backgroundColor: stateColors[st],
@@ -1345,6 +1355,7 @@ function updateChart(records) {
         ...new Set(records.map((r) => r.curso || "Sin curso")),
       ].sort();
       labels = courses;
+      originalLabels = courses;
       datasets = states.map((st) => ({
         label: st,
         backgroundColor: stateColors[st],
@@ -1360,6 +1371,7 @@ function updateChart(records) {
     } else {
       // Specific teacher, specific course -> X: 4 states, Y: count
       labels = states;
+      originalLabels = states;
       datasets = [
         {
           label: "Registros",
@@ -1385,6 +1397,7 @@ function updateChart(records) {
         ...new Set(records.map((r) => r.curso || "Sin curso")),
       ].sort();
       labels = courses;
+      originalLabels = courses;
       datasets = docStates.map((st) => ({
         label: st,
         backgroundColor: stateColors[st],
@@ -1400,6 +1413,7 @@ function updateChart(records) {
     } else {
       // Specific course -> X: 3 states, Y: count
       labels = docStates;
+      originalLabels = docStates;
       datasets = [
         {
           label: "Registros",
@@ -1444,6 +1458,18 @@ function updateChart(records) {
         legend: {
           display: datasets.length > 1, // Hide legend if X axis is the states itself
           position: "bottom",
+        },
+        // NUEVO: Interceptamos la generación del título del tooltip para renderizar el nombre original completo
+        tooltip: {
+          callbacks: {
+            title: function (tooltipItems) {
+              if (tooltipItems.length > 0) {
+                const index = tooltipItems[0].dataIndex;
+                return originalLabels[index] || tooltipItems[0].label;
+              }
+              return "";
+            },
+          },
         },
       },
     },
@@ -2575,6 +2601,40 @@ async function enableReport(docente, curso) {
   }
 }
 
+async function cancelReport(docente, curso) {
+  const confirmed = await showConfirm(
+    `¿Estás seguro de cancelar la habilitación del Informe Final para el curso "${curso}"?\n\nEl docente ya no podrá generarlo hasta que lo vuelvas a habilitar.`,
+    "Cancelar Informe",
+    "Cancelar Habilitación",
+  );
+  if (!confirmed) return;
+
+  showToast("Cancelando habilitación...", "info");
+  try {
+    const res = await callApi("cancelReport", { docente, curso });
+    if (res.success) {
+      showToast(res.message, "success");
+
+      // --- ACTUALIZACIÓN LOCAL (LIVE UPDATE UI) ---
+      state.informes = state.informes.filter(
+        (inf) =>
+          !(
+            inf.docente === docente &&
+            inf.curso === curso &&
+            inf.estado === "Pendiente"
+          ),
+      );
+
+      renderReportsView();
+      // --------------------------------------------
+    } else {
+      showToast(res.message, "danger");
+    }
+  } catch (error) {
+    showToast("Error al cancelar el informe", "danger");
+  }
+}
+
 // ==========================================
 // 7. Helpers, Modals & Events
 // ==========================================
@@ -3138,6 +3198,32 @@ function downloadReportPdf(url) {
     .replace(/\/view\?usp=drivesdk$/, "/export?format=pdf");
 
   window.open(pdfUrl, "_blank");
+}
+
+// Función auxiliar para abreviar nombres de docentes (Ej: Anthony Richard Robles Flores -> Ant. R. R. F.)
+function abbreviateTeacherName(name) {
+  if (!name) return "";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 0) return "";
+
+  const firstWord = parts[0];
+  let firstAbbr = firstWord.substring(0, 3);
+  if (firstAbbr.length > 0) {
+    firstAbbr =
+      firstAbbr.charAt(0).toUpperCase() +
+      firstAbbr.slice(1).toLowerCase() +
+      ".";
+  }
+
+  const initials = parts
+    .slice(1)
+    .map((word) => {
+      const char = word.trim().charAt(0);
+      return char ? char.toUpperCase() + "." : "";
+    })
+    .filter(Boolean);
+
+  return [firstAbbr, ...initials].join(" ");
 }
 
 // --- Listeners de Eventos Globales ---
