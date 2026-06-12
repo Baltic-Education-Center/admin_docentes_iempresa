@@ -127,6 +127,7 @@
           </div>
 
           <!-- Admin Selectors -->
+          <!-- Admin Selectors -->
           <div class="nav-section admin-only" id="adminFiltersSection">
             <span class="section-title">Filtros de Control</span>
             <div class="filter-group">
@@ -138,7 +139,6 @@
                 <i class="ph ph-caret-down"></i>
               </div>
             </div>
-            <!-- MODIFICADO: Agregados IDs a los filter-group para control por JS -->
             <div
               class="filter-group"
               style="margin-top: 16px"
@@ -171,6 +171,24 @@
                   <option value="Pendiente">Pendientes</option>
                   <option value="Completado">Completados</option>
                   <option value="Enviado">Enviados</option>
+                </select>
+                <i class="ph ph-caret-down"></i>
+              </div>
+            </div>
+
+            <!-- NUEVO: Filtro Estado OSE (Oculto por defecto, se muestra en Informes) -->
+            <div
+              class="filter-group"
+              style="margin-top: 16px; display: none"
+              id="adminOseFilterGroup"
+            >
+              <label for="adminOseSelect">Estado OSE</label>
+              <div class="select-wrapper">
+                <select id="adminOseSelect">
+                  <option value="">Todos</option>
+                  <option value="Sin revisar">Sin revisar</option>
+                  <option value="Conforme">Conforme</option>
+                  <option value="No Conforme">No Conforme</option>
                 </select>
                 <i class="ph ph-caret-down"></i>
               </div>
@@ -464,6 +482,8 @@
               id="reportDniInput"
               required
               placeholder="Ej: 12345678"
+              maxlength="8"
+              oninput="this.value = this.value.replace(/[^0-9]/g, '')"
             />
           </div>
 
@@ -647,7 +667,7 @@
                 onclick="setSignatureMode('draw')"
                 style="flex: 1; padding: 8px; font-size: 12px; height: auto"
               >
-                <i class="ph ph-pencil-line"></i> Dibujar
+                <i class="ph ph-pencil-line"></i> MODO Dibujar
               </button>
               <button
                 type="button"
@@ -656,7 +676,7 @@
                 onclick="setSignatureMode('upload')"
                 style="flex: 1; padding: 8px; font-size: 12px; height: auto"
               >
-                <i class="ph ph-upload-simple"></i> Subir Imagen
+                <i class="ph ph-upload-simple"></i> MODO Subir Imagen
               </button>
             </div>
 
@@ -1062,7 +1082,12 @@
           </div>
           <div class="form-group">
             <label for="editDni">DNI</label>
-            <input type="text" id="editDni" />
+            <input
+              type="text"
+              id="editDni"
+              maxlength="8"
+              oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+            />
           </div>
 
           <div class="form-group">

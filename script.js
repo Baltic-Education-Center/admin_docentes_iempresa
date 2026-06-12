@@ -16,7 +16,8 @@ let state = {
     search: "",
     teacher: "",
     status: "Pendiente",
-    actividad: "", // NUEVO FILTRO
+    actividad: "",
+    estadoOse: "",
   },
   viewMode: "table",
   reportEvidences: {
@@ -149,6 +150,8 @@ const elements = {
     "signatureUploadPlaceholder",
   ),
   signatureHelpText: document.getElementById("signatureHelpText"),
+  adminOseFilterGroup: document.getElementById("adminOseFilterGroup"),
+  adminOseSelect: document.getElementById("adminOseSelect"),
 };
 
 // ==========================================
@@ -462,6 +465,14 @@ function init() {
     state.filters.status = e.target.value;
     renderRecords();
   });
+
+  // NUEVO: Filtro OSE
+  if (elements.adminOseSelect) {
+    elements.adminOseSelect.addEventListener("change", (e) => {
+      state.filters.estadoOse = e.target.value;
+      renderReportsView();
+    });
+  }
 
   // Búsqueda Universal
   elements.searchInput.addEventListener("input", (e) => {
@@ -806,7 +817,6 @@ function renderReportsView() {
   if (state.user.role === "admin") {
     targetTeacher = state.filters.teacher;
     if (!targetTeacher) {
-      // Para Admin "Todos los docentes": Obtiene todos los pares únicos de (curso, docente)
       const pairsMap = new Map();
       state.records.forEach((r) => {
         const c = (r.curso || "").toString().trim();
@@ -820,23 +830,18 @@ function renderReportsView() {
       });
       sourceCourses = Array.from(pairsMap.values());
     } else {
-      // Para Admin un solo docente
       const pairsMap = new Map();
       state.records.forEach((r) => {
         const c = (r.curso || "").toString().trim();
         const d = (r.docente || "").toString().trim();
         if (c && d && d.toLowerCase() === targetTeacher.toLowerCase()) {
-          pairsMap.set(c.toLowerCase(), {
-            courseName: c,
-            teacherName: d,
-          });
+          pairsMap.set(c.toLowerCase(), { courseName: c, teacherName: d });
         }
       });
       sourceCourses = Array.from(pairsMap.values());
     }
   } else {
     targetTeacher = state.user.name;
-    // Para Docente: SÓLO obtiene los cursos que ya han sido habilitados (existen en la hoja Informes)
     const pairsMap = new Map();
     state.informes.forEach((inf) => {
       const c = (inf.curso || "").toString().trim();
@@ -851,19 +856,16 @@ function renderReportsView() {
     sourceCourses = Array.from(pairsMap.values());
   }
 
-  // 1. Obtener cursos únicos y asignarles ciclo
   const coursesData = sourceCourses.map((item) => {
     let cicloNum = 99;
     let cicloText = "";
-
     if (item.courseName.includes("-")) {
       const parts = item.courseName.split("-");
       if (parts.length > 1) {
         const firstChar = parts[1].trim().charAt(0);
         if (firstChar && !isNaN(firstChar)) {
-          const num = parseInt(firstChar);
-          cicloNum = num;
-          cicloText = `Ciclo 0${num}`;
+          cicloNum = parseInt(firstChar);
+          cicloText = `Ciclo 0${cicloNum}`;
         }
       }
     }
@@ -875,7 +877,6 @@ function renderReportsView() {
     };
   });
 
-  // 2. Ordenar por Docente, Ciclo y nombre
   coursesData.sort((a, b) => {
     const teacherCompare = a.teacher.localeCompare(b.teacher);
     if (teacherCompare !== 0) return teacherCompare;
@@ -893,17 +894,39 @@ function renderReportsView() {
           <p style="color: var(--text-muted); font-size: 15px;">${state.user.role === "admin" ? "No se encontraron entregas de cursos." : "El administrador aún no ha habilitado informes para tus cursos."}</p>
       </div>
     `;
+    if (typeof updateReportBatchActionBar === "function")
+      updateReportBatchActionBar();
     return;
   }
 
-  // 3. Lógica de Clasificación de Cursos (Enviados, Completados, Pendientes)
-  const groupedCourses = {
-    Enviados: [],
-    Completados: [],
-    Pendientes: [],
-  };
+  const groupedCourses = { Enviados: [], Completados: [], Pendientes: [] };
 
   coursesData.forEach((item) => {
+    const existingReport = state.informes.find(
+      (inf) =>
+        inf.curso &&
+        inf.curso.toString().trim().toLowerCase() ===
+          item.name.toLowerCase().trim() &&
+        (inf.docente || "").toLowerCase() === item.teacher.toLowerCase(),
+    );
+
+    const estadoOse = existingReport ? existingReport.estado_ose : null;
+
+    if (state.filters.estadoOse) {
+      if (state.filters.estadoOse === "Conforme" && estadoOse !== "Conforme")
+        return;
+      if (
+        state.filters.estadoOse === "No Conforme" &&
+        estadoOse !== "No Conforme"
+      )
+        return;
+      if (
+        state.filters.estadoOse === "Sin revisar" &&
+        (estadoOse === "Conforme" || estadoOse === "No Conforme")
+      )
+        return;
+    }
+
     const courseRecords = state.records.filter(
       (r) =>
         (r.curso || "").toString().trim() === item.name &&
@@ -913,8 +936,6 @@ function renderReportsView() {
     let pCount = 0,
       cCount = 0,
       eCount = 0;
-
-    // Ignoramos "sin revisar" para la clasificación
     courseRecords.forEach((r) => {
       const st = (r.estado || "sin revisar").toString().trim().toLowerCase();
       if (st === "pendiente") pCount++;
@@ -922,26 +943,24 @@ function renderReportsView() {
       else if (st === "enviado") eCount++;
     });
 
-    let group = "Pendientes"; // Por defecto si hay pendientes, o no hay registros contabilizables aún
-    if (pCount > 0) {
-      group = "Pendientes";
-    } else if (cCount > 0) {
-      group = "Completados";
-    } else if (eCount > 0) {
-      group = "Enviados";
-    }
+    let group = "Pendientes";
+    if (pCount > 0) group = "Pendientes";
+    else if (cCount > 0) group = "Completados";
+    else if (eCount > 0) group = "Enviados";
 
     item.computedGroup = group;
+    item.existingReport = existingReport;
+    item.estadoOse = estadoOse;
+
     groupedCourses[group].push(item);
   });
 
-  // 4. Renderizado Agrupado
   let html = "";
   const groupOrder = ["Enviados", "Completados", "Pendientes"];
   const groupColors = {
-    Enviados: "#3498db", // Celeste
-    Completados: "#2ecc71", // Verde
-    Pendientes: "#f15a24", // Naranja
+    Enviados: "#3498db",
+    Completados: "#2ecc71",
+    Pendientes: "#f15a24",
   };
 
   groupOrder.forEach((groupName) => {
@@ -957,16 +976,30 @@ function renderReportsView() {
       `;
 
       items.forEach((item) => {
-        // Buscar si existe en la hoja Informes (Status del documento Informe)
-        const existingReport = state.informes.find(
-          (inf) =>
-            inf.curso &&
-            inf.curso.toString().trim().toLowerCase() ===
-              item.name.toLowerCase().trim() &&
-            (inf.docente || "").toLowerCase() === item.teacher.toLowerCase(),
-        );
-
+        const existingReport = item.existingReport;
         const status = existingReport ? existingReport.estado : "No Habilitado";
+        const estadoOse = item.estadoOse;
+
+        let badgeOse = "";
+        let cardClassOse = "";
+
+        if (estadoOse === "Conforme") {
+          badgeOse = `<span style="font-size: 10px; padding: 4px 8px; border-radius: 4px; background: #e8f5e9; color: #2ecc71; font-weight: bold; border: 1px solid #2ecc71; margin-left: auto;">Conforme OSE</span>`;
+          cardClassOse = " card-ose-conforme";
+        } else if (estadoOse === "No Conforme") {
+          badgeOse = `<span style="font-size: 10px; padding: 4px 8px; border-radius: 4px; background: #fdf2f2; color: #e74c3c; font-weight: bold; border: 1px solid #e74c3c; margin-left: auto;">No Conforme OSE</span>`;
+          cardClassOse = " card-ose-noconforme";
+        }
+
+        let checkboxHtml = "";
+        if (
+          state.user.role === "admin" &&
+          status === "Completado" &&
+          estadoOse !== "Conforme"
+        ) {
+          checkboxHtml = `<input type="checkbox" class="select-report-checkbox" data-docente="${item.teacher}" data-curso="${item.name}" data-group="${item.computedGroup}" onchange="updateReportBatchActionBar()">`;
+        }
+
         let finalUrl = null;
         if (existingReport && existingReport.url_informe) {
           if (state.user.role === "admin") {
@@ -983,33 +1016,26 @@ function renderReportsView() {
         }
 
         html += `
-          <div class="student-card report-card">
-            <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="student-card report-card${cardClassOse}">
+            <div class="card-header" style="display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
               <div style="display: flex; align-items: center; gap: 8px;">
+                ${checkboxHtml}
                 <i class="ph ph-book-open" style="font-size: 20px; color: var(--primary);"></i>
                 ${item.cicloText ? `<span style="font-size: 11px; font-weight: 700; color: var(--primary); background: rgba(241, 90, 36, 0.1); padding: 2px 8px; border-radius: 12px;">${item.cicloText}</span>` : ""}
               </div>
-              
+              ${badgeOse}
               ${
                 state.user.role === "docente" && status === "Completado"
-                  ? `
-                <div style="display: flex; gap: 4px;">
-                  <button class="btn-icon" onclick="downloadReportPdf('${finalUrl}')" style="width: 28px; height: 28px; font-size: 14px; background: #fff5f5; border-color: #feb2b2; color: #c53030;" title="Descargar PDF">
-                    <i class="ph ph-file-pdf"></i>
-                  </button>
-                  <button class="btn-icon" onclick="openReportModal('${item.name.replace(/'/g, "\\'")}', true)" style="width: 28px; height: 28px; font-size: 14px; background: white; border-color: var(--border);" title="Editar y Volver a Generar">
-                    <i class="ph ph-pencil-simple"></i>
-                  </button>
-                </div>
-              `
+                  ? `<div style="display: flex; gap: 4px; margin-left: auto;">
+                      <button class="btn-icon" onclick="downloadReportPdf('${finalUrl}')" style="width: 28px; height: 28px; font-size: 14px; background: #fff5f5; border-color: #feb2b2; color: #c53030;" title="Descargar PDF"><i class="ph ph-file-pdf"></i></button>
+                      ${estadoOse !== "Conforme" ? `<button class="btn-icon" onclick="openReportModal('${item.name.replace(/'/g, "\\'")}', true)" style="width: 28px; height: 28px; font-size: 14px; background: white; border-color: var(--border);" title="Editar y Volver a Generar"><i class="ph ph-pencil-simple"></i></button>` : ""}
+                    </div>`
                   : ""
               }
-              
-              ${status !== "Completado" ? `<span class="status-badge status-${status.toLowerCase().replace(" ", "-")}" style="font-size: 10px; padding: 4px 8px;">${status}</span>` : ""}
+              ${status !== "Completado" ? `<span class="status-badge status-${status.toLowerCase().replace(" ", "-")}" style="font-size: 10px; padding: 4px 8px; margin-left: auto;">${status}</span>` : ""}
             </div>
             <div class="card-body">
               <h3>${item.name}</h3>
-              <!-- Tag Dinámico de Clasificación -->
               <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: ${groupColors[item.computedGroup]}; background-color: ${groupColors[item.computedGroup]}15; padding: 4px 8px; border-radius: 4px; margin-bottom: 8px; border: 1px solid ${groupColors[item.computedGroup]}30;">
                   <i class="ph-fill ph-circle" style="font-size: 8px;"></i> REGISTROS ${item.computedGroup.toUpperCase()}
               </span>
@@ -1018,60 +1044,61 @@ function renderReportsView() {
             <div class="card-footer">
         `;
 
-        // LÓGICA DE BOTONES (ADMIN VS DOCENTE)
         if (state.user.role === "admin") {
           if (status === "No Habilitado") {
-            html += `
-              <button class="btn btn-primary btn-full" onclick="enableReport('${item.teacher.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}')" style="height: 40px; font-size: 13px;">
-                <i class="ph ph-check-circle"></i> Habilitar Informe
-              </button>
-            `;
+            // Evaluamos si el curso está en 'Registros Enviados'
+            if (item.computedGroup === "Enviados") {
+              // Estructura adaptada con span de máscara interna para renderizar los destellos
+              html += `<button class="btn btn-primary btn-full btn-magic-border" onclick="enableReport('${item.teacher.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}')" style="height: 40px; font-size: 13px;"><span class="btn-magic-content"><i class="ph ph-check-circle"></i> Habilitar Informe</span></button>`;
+            } else {
+              // Botón normal para los demás casos
+              html += `<button class="btn btn-primary btn-full" onclick="enableReport('${item.teacher.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}')" style="height: 40px; font-size: 13px;"><i class="ph ph-check-circle"></i> Habilitar Informe</button>`;
+            }
           } else if (status === "Pendiente") {
-            // MODIFICADO: Se agrega el botón de Cancelar junto al de Esperando al Docente
             html += `
               <div style="display: flex; gap: 8px;">
-                <button class="btn btn-outline btn-full" disabled style="height: 40px; font-size: 13px; opacity: 0.7; cursor: not-allowed; border-style: dashed;">
-                  <i class="ph ph-hourglass-high"></i> Esperando al Docente
-                </button>
-                <button class="btn btn-icon" onclick="cancelReport('${item.teacher.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}')" style="width: 40px; height: 40px; font-size: 18px; border-color: var(--danger); color: var(--danger); flex-shrink: 0;" title="Cancelar Habilitación">
-                  <i class="ph ph-x"></i>
-                </button>
+                <button class="btn btn-outline btn-full" disabled style="height: 40px; font-size: 13px; opacity: 0.7; cursor: not-allowed; border-style: dashed;"><i class="ph ph-hourglass-high"></i> Esperando al Docente</button>
+                <button class="btn btn-icon" onclick="cancelReport('${item.teacher.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}')" style="width: 40px; height: 40px; font-size: 18px; border-color: var(--danger); color: var(--danger); flex-shrink: 0;" title="Cancelar Habilitación"><i class="ph ph-x"></i></button>
               </div>
             `;
           } else {
             html += `
-              <button class="btn btn-outline btn-full" onclick="window.open('${finalUrl}', '_blank')" style="background: white; border-color: var(--primary); color: var(--primary); font-weight: 600; height: 40px; font-size: 13px;">
-                <i class="ph ph-eye"></i> Ver Informe Generado
-              </button>
+              <div style="display: flex; gap: 8px; flex-direction: column;">
+                <button class="btn btn-outline btn-full" onclick="window.open('${finalUrl}', '_blank')" style="background: white; border-color: var(--primary); color: var(--primary); font-weight: 600; height: 40px; font-size: 13px;"><i class="ph ph-eye"></i> Ver Informe Generado</button>
+                <div style="display: flex; gap: 4px; width: 100%;">
+                  <button class="btn btn-outline" onclick="setEstadoOSE('${item.teacher.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}', 'Conforme')" style="flex:1; height: 32px; font-size: 11px; border-color: #2ecc71; color: #2ecc71; padding: 0;" title="Marcar Conforme"><i class="ph ph-check-circle" style="margin-right: 4px;"></i> Conforme</button>
+                  <button class="btn btn-outline" onclick="setEstadoOSE('${item.teacher.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}', 'No Conforme')" style="flex:1; height: 32px; font-size: 11px; border-color: #e74c3c; color: #e74c3c; padding: 0;" title="Marcar No Conforme"><i class="ph ph-warning-circle" style="margin-right: 4px;"></i> No Conforme</button>
+                  <button class="btn btn-outline" onclick="setEstadoOSE('${item.teacher.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}', 'Cancelar')" style="width: 32px; height: 32px; font-size: 16px; border-color: var(--danger); color: var(--danger); padding:0; flex-shrink: 0;" title="Eliminar/Cancelar"><i class="ph ph-trash"></i></button>
+                </div>
+              </div>
             `;
           }
         } else {
           if (status === "Pendiente") {
-            html += `
-              <button class="btn btn-primary btn-full" onclick="openReportModal('${item.name.replace(/'/g, "\\'")}')" style="height: 40px; font-size: 13px;">
-                <i class="ph ph-file-text"></i> Generar Informe Final
-              </button>
-            `;
+            // El botón 'Generar Informe Final' solo se habilita si el grupo es 'Enviados'
+            if (item.computedGroup === "Enviados") {
+              html += `<button class="btn btn-primary btn-full" onclick="openReportModal('${item.name.replace(/'/g, "\\'")}')" style="height: 40px; font-size: 13px;"><i class="ph ph-file-text"></i> Generar Informe Final</button>`;
+            } else {
+              html += `<button class="btn btn-primary btn-full" disabled style="height: 40px; font-size: 13px; opacity: 0.5; cursor: not-allowed;" title="El informe de este curso solo se puede generar cuando sus registros estén en 'Registros Enviados'"><i class="ph ph-file-text"></i> Generar Informe Final</button>`;
+            }
           } else if (status === "Completado") {
-            html += `
-              <button class="btn btn-outline btn-full" onclick="window.open('${finalUrl}', '_blank')" style="background: white; border-color: var(--primary); color: var(--primary); font-weight: 600; height: 40px; font-size: 13px;">
-                <i class="ph ph-eye"></i> Ver Informe Generado
-              </button>
-            `;
+            html += `<button class="btn btn-outline btn-full" onclick="window.open('${finalUrl}', '_blank')" style="background: white; border-color: var(--primary); color: var(--primary); font-weight: 600; height: 40px; font-size: 13px;"><i class="ph ph-eye"></i> Ver Informe Generado</button>`;
           }
         }
 
-        html += `
-            </div>
-          </div>
-        `;
+        html += `</div></div>`;
       });
 
-      html += `</div></div>`; // Cierre del grid y sección del grupo
+      html += `</div></div>`;
     }
   });
 
+  // Update innerHTML
   elements.reportsView.innerHTML = html;
+
+  // ESTA LÍNEA ES CLAVE: Fuerza al botón "Seleccionar Todo" a re-evaluarse siempre al final
+  if (typeof updateReportBatchActionBar === "function")
+    updateReportBatchActionBar();
 }
 
 function renderUserTable() {
@@ -1555,6 +1582,124 @@ function updateBatchActionBar() {
   }
 }
 
+// --- Lógica para Batch Action de Informes (Conformidad OSE) ---
+function updateReportBatchActionBar() {
+  const allCheckboxes = document.querySelectorAll(".select-report-checkbox");
+  const checkedBoxes = Array.from(allCheckboxes).filter((cb) => cb.checked);
+  const count = checkedBoxes.length;
+
+  allCheckboxes.forEach((cb) => {
+    const card = cb.closest(".report-card");
+    if (cb.checked) {
+      if (card) card.classList.add("selected-card");
+    } else {
+      if (card) card.classList.remove("selected-card");
+    }
+  });
+
+  const btnBatchAction = document.getElementById("btnBatchAction");
+  const batchActionBar = document.getElementById("batchActionBar");
+
+  if (count > 0 && batchActionBar && btnBatchAction) {
+    const countSpan = document.getElementById("batchCountText");
+    const actionIcon = document.getElementById("batchActionIcon");
+    const actionText = document.getElementById("batchActionText");
+
+    if (countSpan)
+      countSpan.textContent = `${count} informe${count > 1 ? "s" : ""} seleccionado${count > 1 ? "s" : ""}`;
+
+    if (actionIcon) actionIcon.className = "ph ph-check-circle";
+    if (actionText) actionText.textContent = "Marcar Conforme OSE";
+
+    btnBatchAction.onclick = markSelectedReportsAsConforme;
+    batchActionBar.style.display = "flex";
+  } else if (batchActionBar) {
+    batchActionBar.style.display = "none";
+  }
+
+  const btnSelectAll = document.getElementById("btnSelectAll");
+  const spanSelectAll = document.getElementById("selectAllText");
+
+  if (btnSelectAll && spanSelectAll) {
+    const enviadosCheckboxes = Array.from(allCheckboxes).filter(
+      (cb) => cb.getAttribute("data-group") === "Enviados",
+    );
+
+    if (enviadosCheckboxes.length > 0) {
+      btnSelectAll.style.display = "flex";
+
+      const countEnviados = enviadosCheckboxes.filter(
+        (cb) => cb.checked,
+      ).length;
+      if (countEnviados === enviadosCheckboxes.length) {
+        spanSelectAll.textContent = "Deseleccionar Todo";
+      } else {
+        spanSelectAll.textContent = "Seleccionar Todo";
+      }
+    } else {
+      btnSelectAll.style.display = "none";
+    }
+  }
+}
+
+async function markSelectedReportsAsConforme() {
+  const checkboxes = document.querySelectorAll(
+    ".select-report-checkbox:checked",
+  );
+  const items = Array.from(checkboxes).map((cb) => ({
+    docente: cb.getAttribute("data-docente"),
+    curso: cb.getAttribute("data-curso"),
+  }));
+
+  if (items.length === 0) return;
+
+  const confirmed = await showConfirm(
+    `¿Estás seguro de dar la conformidad OSE a ${items.length} informe(s) seleccionado(s)?`,
+    "Actualización Masiva",
+    "Confirmar",
+  );
+
+  if (!confirmed) return;
+
+  const btn = document.getElementById("btnBatchAction");
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `
+        <div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0;display:inline-block;vertical-align:middle;"></div>
+        <span style="margin-left:8px;" class="loading-dots">Actualizando</span>
+    `;
+
+  try {
+    const res = await callApi("batchUpdateEstadoOSE", {
+      items,
+      accion: "Conforme",
+    });
+
+    if (res.success) {
+      showToast(res.message, "success");
+      document.getElementById("batchActionBar").style.display = "none";
+
+      items.forEach((item) => {
+        const reportIndex = state.informes.findIndex(
+          (inf) => inf.docente === item.docente && inf.curso === item.curso,
+        );
+        if (reportIndex !== -1) {
+          state.informes[reportIndex].estado_ose = "Conforme";
+        }
+      });
+
+      renderReportsView();
+    } else {
+      showToast(res.message, "danger");
+    }
+  } catch (error) {
+    showToast("Error al procesar actualización masiva de informes", "danger");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
 function updateUserBatchActionBar() {
   const allCheckboxes = document.querySelectorAll(".select-user-checkbox");
   const checkedBoxes = Array.from(allCheckboxes).filter((cb) => cb.checked);
@@ -1583,17 +1728,34 @@ function updateUserBatchActionBar() {
   }
 }
 
+// --- Gestión de Selección Masiva (Batch Selection) ---
 function toggleSelectAll() {
-  const checkboxes = document.querySelectorAll(".select-card-checkbox");
+  const isReportsView =
+    elements.navReports && elements.navReports.classList.contains("active");
+  const checkboxClass = isReportsView
+    ? ".select-report-checkbox"
+    : ".select-card-checkbox";
+  let checkboxes = Array.from(document.querySelectorAll(checkboxClass));
+
+  if (isReportsView) {
+    // Filtra para seleccionar SOLAMENTE a los que estén en el grupo "Enviados"
+    checkboxes = checkboxes.filter(
+      (cb) => cb.getAttribute("data-group") === "Enviados",
+    );
+  }
+
   if (checkboxes.length === 0) return;
 
-  // Evaluamos si todos están marcados para saber si debemos marcar o desmarcar
-  const allChecked = Array.from(checkboxes).every((cb) => cb.checked);
+  const allChecked = checkboxes.every((cb) => cb.checked);
   checkboxes.forEach((cb) => {
     cb.checked = !allChecked;
   });
 
-  updateBatchActionBar(); // Esto disparará los colores y contadores
+  if (isReportsView) {
+    updateReportBatchActionBar();
+  } else {
+    updateBatchActionBar();
+  }
 }
 
 function toggleSelectAllUsers() {
@@ -1679,6 +1841,9 @@ function showDashboardView() {
     elements.adminFiltersSection.style.display = "block";
     document.getElementById("adminCourseFilterGroup").style.display = "block";
     document.getElementById("adminStatusFilterGroup").style.display = "block";
+    // Ocultar filtro OSE en el panel normal
+    if (elements.adminOseFilterGroup)
+      elements.adminOseFilterGroup.style.display = "none";
     elements.adminStatusSelect.value = state.filters.status;
     populateAdminCourseSelect();
     elements.btnRemindTeacher.style.display = "flex";
@@ -1734,7 +1899,7 @@ function showReportsView() {
   elements.userManagementView.style.display = "none";
   elements.reportsView.style.display = "grid";
 
-  // Títulos dinámicos por Rol
+  // Títulos dinámicos
   if (state.user.role === "admin") {
     document.getElementById("pageTitle").textContent = "Gestión de Informes";
     document.getElementById("pageSubtitle").textContent =
@@ -1745,21 +1910,28 @@ function showReportsView() {
       "Genera informes finales de los cursos habilitados";
   }
 
-  // Ocultar elementos del dashboard principal
+  // Ocultamos elementos del Dashboard que no van aquí
   elements.statsBar.style.display = "none";
   elements.chartContainer.style.display = "none";
   elements.recordsGrid.style.display = "none";
 
-  // Manejo de la barra lateral (Ocultar filtros innecesarios del admin)
+  // SOLUCIÓN AL BUG: Ocultamos el botón "Notificar a TODOS" de esta vista
+  if (elements.btnRemindTeacher) {
+    elements.btnRemindTeacher.style.display = "none";
+  }
+
   if (elements.adminFiltersSection) {
     if (state.user.role === "admin") {
       elements.adminFiltersSection.style.display = "block";
       document.getElementById("adminCourseFilterGroup").style.display = "none";
       document.getElementById("adminStatusFilterGroup").style.display = "none";
+      if (elements.adminOseFilterGroup)
+        elements.adminOseFilterGroup.style.display = "block";
     } else {
       elements.adminFiltersSection.style.display = "none";
     }
   }
+
   if (elements.docenteSidebarSection)
     elements.docenteSidebarSection.style.display = "none";
   if (elements.activityFilterContainer)
@@ -1767,9 +1939,6 @@ function showReportsView() {
 
   elements.searchInput.parentElement.style.display = "none";
   elements.btnToggleView.style.display = "none";
-  document.getElementById("btnSelectAll").style.display = "none";
-  elements.batchActionBar.style.display = "none";
-  elements.btnRemindTeacher.style.display = "none";
 
   renderReportsView();
 }
@@ -2034,13 +2203,21 @@ async function saveStudentEdit(id) {
     (r) => r.id_registro.toString() === id.toString(),
   );
 
+  // MODIFICADO: Obtener y parsear correctamente la nota en el modal de edición si el rol es docente
+  let notaValue = record.nota;
+  if (state.user.role === "docente") {
+    const rawNota = document.getElementById("editNota").value;
+    const parsedNota = parseFloat(rawNota);
+    notaValue = !isNaN(parsedNota) ? parsedNota : "";
+  }
+
   const updateData = {
-    alumno: document.getElementById("editAlumno").value, // Nombre unificado
+    alumno: document.getElementById("editAlumno").value,
     dni: document.getElementById("editDni").value,
     estado: elements.editEstado.value,
     docente: record.docente,
     curso: record.curso,
-    nota: state.user.role === "docente" ? elements.editNota.value : record.nota,
+    nota: notaValue,
     comentario:
       state.user.role === "docente"
         ? elements.editComentario.value
@@ -2052,7 +2229,6 @@ async function saveStudentEdit(id) {
     return;
   }
 
-  // Validar DNI (8 dígitos numéricos)
   const dniRegex = /^\d{8}$/;
   if (!dniRegex.test(updateData.dni)) {
     showToast("El DNI debe tener exactamente 8 números", "warning");
@@ -2088,7 +2264,6 @@ async function saveStudentEdit(id) {
       }
 
       renderRecords();
-      // --------------------------------------------
     } else {
       showToast(res.message, "danger");
     }
@@ -2303,10 +2478,12 @@ async function markSelectedAsPending() {
 }
 
 async function saveGrade(id) {
-  const grade = document.getElementById("gradeInput").value;
+  const rawGrade = document.getElementById("gradeInput").value;
+  // CORRECCIÓN: Reincorporar la lectura del campo de comentarios para evitar ReferenceError
   const comment = document.getElementById("commentInput").value;
+  const grade = parseFloat(rawGrade);
 
-  if (!grade || grade < 0 || grade > 20) {
+  if (isNaN(grade) || grade < 0 || grade > 20) {
     showToast("Ingresa una nota válida (0-20)", "warning");
     return;
   }
@@ -2328,25 +2505,23 @@ async function saveGrade(id) {
       closeModal();
 
       // --- ACTUALIZACIÓN LOCAL (LIVE UPDATE UI) ---
-      // 1. Buscar el registro exacto en la memoria
       const recordIndex = state.records.findIndex(
         (r) => r.id_registro.toString() === id.toString(),
       );
 
       if (recordIndex !== -1) {
-        // 2. Actualizar los datos localmente
         state.records[recordIndex].nota = grade;
         state.records[recordIndex].comentario = comment;
-        state.records[recordIndex].estado = "Completado"; // Pasa a completado automáticamente
+        state.records[recordIndex].estado = "Completado";
       }
 
-      // 3. Re-dibujar la interfaz (Cartas, Tablas, Gráficos y Estadísticas) usando la memoria
       renderRecords();
-      // --------------------------------------------
     } else {
       showToast(res.message, "danger");
     }
   } catch (error) {
+    // Registrar el error en la consola facilita el diagnóstico de futuros inconvenientes
+    console.error("Error en saveGrade:", error);
     showToast("Error al procesar la calificación", "danger");
   } finally {
     saveBtn.disabled = false;
@@ -2510,6 +2685,7 @@ async function handleGenerateReportSubmit() {
 
       const updateData = {
         estado: "Completado",
+        estado_ose: "", // Limpiamos el Estado OSE tras editar
         url_informe: res.url,
         dni: dni,
         periodo_1: date1,
@@ -2540,7 +2716,6 @@ async function handleGenerateReportSubmit() {
       }
 
       renderReportsView();
-      // --------------------------------------------
 
       setTimeout(() => {
         elements.loadingOverlay.style.display = "none";
@@ -2632,6 +2807,48 @@ async function cancelReport(docente, curso) {
     }
   } catch (error) {
     showToast("Error al cancelar el informe", "danger");
+  }
+}
+
+async function setEstadoOSE(docente, curso, accion) {
+  let mensaje = `¿Estás seguro de marcar este informe como "${accion}"?`;
+  if (accion === "Cancelar") {
+    mensaje = `¿Estás seguro de eliminar y cancelar la habilitación del Informe Final para el curso "${curso}"?\n\nEl docente tendrá que empezar desde cero.`;
+  }
+
+  const confirmed = await showConfirm(
+    mensaje,
+    "Actualizar Estado OSE",
+    "Confirmar",
+  );
+  if (!confirmed) return;
+
+  showToast("Actualizando...", "info");
+  try {
+    const res = await callApi("updateEstadoOSE", { docente, curso, accion });
+    if (res.success) {
+      showToast(res.message, "success");
+
+      // --- ACTUALIZACIÓN LOCAL (LIVE UPDATE UI) ---
+      if (accion === "Cancelar") {
+        state.informes = state.informes.filter(
+          (inf) => !(inf.docente === docente && inf.curso === curso),
+        );
+      } else {
+        const reportIndex = state.informes.findIndex(
+          (inf) => inf.docente === docente && inf.curso === curso,
+        );
+        if (reportIndex !== -1) {
+          state.informes[reportIndex].estado_ose = accion;
+        }
+      }
+      renderReportsView();
+      // --------------------------------------------
+    } else {
+      showToast(res.message, "danger");
+    }
+  } catch (error) {
+    showToast("Error al actualizar estado OSE", "danger");
   }
 }
 

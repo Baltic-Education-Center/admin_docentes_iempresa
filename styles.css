@@ -1474,3 +1474,98 @@ body.role-admin .nav-link.admin-only {
     transform: rotate(360deg);
   }
 }
+
+/* --- Fondos para Estados OSE --- */
+.card-ose-conforme {
+  background-color: rgba(46, 204, 113, 0.04) !important;
+  border-color: rgba(46, 204, 113, 0.3) !important;
+}
+
+.card-ose-noconforme {
+  background-color: rgba(231, 76, 60, 0.04) !important;
+  border-color: rgba(231, 76, 60, 0.3) !important;
+}
+
+/* --- NUEVOS ESTILOS MODIFICADOS--- */
+/* Botón contenedor transparente */
+/* Botón contenedor transparente */
+.btn-magic-border {
+  position: relative !important;
+  overflow: hidden !important;
+  padding: 0 !important; /* Eliminamos el padding nativo para que la máscara llene el espacio */
+  border: none !important;
+  background: transparent !important;
+  border-radius: var(--radius-sm);
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 4px 10px rgba(241, 90, 36, 0.2);
+}
+
+/* Capa de destellos dobles (Dos haces de luz simétricos) */
+.btn-magic-border::before {
+  content: "";
+  position: absolute;
+  width: 200%;
+  height: 400%;
+  top: -150%;
+  left: -50%;
+  /* Gradiente cónico con dos puntos de destello opuestos a 180° de diferencia */
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    var(--primary-hover) 15%,
+    #fbbf24 22%,
+    #ffffff 25%,
+    /* Primer destello brillante */ #fbbf24 28%,
+    var(--primary-hover) 35%,
+    transparent 45%,
+
+    transparent 50%,
+    var(--primary-hover) 65%,
+    #fbbf24 72%,
+    #ffffff 75%,
+    /* Segundo destello brillante */ #fbbf24 78%,
+    var(--primary-hover) 85%,
+    transparent 95%,
+    transparent 100%
+  );
+  animation: magic-sparkle-rotate 3.5s linear infinite; /* 3.5s para un movimiento fluido y no sobrecargado */
+  z-index: 1 !important;
+}
+
+/* Máscara interna que tapa el centro del botón y revela el borde de 2px */
+.btn-magic-border .btn-magic-content {
+  position: relative;
+  z-index: 2 !important;
+  background-color: var(--primary); /* Fondo naranja por defecto */
+  width: calc(100% - 4px); /* Deja un margen de 2px a cada lado */
+  height: calc(100% - 4px); /* Deja un margen de 2px arriba y abajo */
+  border-radius: calc(var(--radius-sm) - 1.5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: white !important;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 0 24px; /* Simula el padding interno del botón nativo */
+  transition:
+    background-color 0.3s,
+    color 0.3s;
+}
+
+/* Cambio de color en hover para la máscara interna */
+.btn-magic-border:hover .btn-magic-content {
+  background-color: var(--primary-hover);
+}
+
+/* Animación continua de rotación en sentido horario (0deg a 360deg) */
+@keyframes magic-sparkle-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
